@@ -403,7 +403,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
         schedule(200);
     }
 
-    /** 啟動 AutoCool 的派遣頁面順序，但所有 OCR、像素與前景判斷都由 PikminX 執行。 */
+    /** 啟動  的派遣頁面順序，但所有 OCR、像素與前景判斷都由 PikminX 執行。 */
     private void startExpeditionDispatch(
             int count,
             ExpeditionTargetMode targetMode,
@@ -869,7 +869,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
         beginPlantingFlowerSearch(nextFlower, 0, false);
     }
 
-    /** AutoCool 派遣頁面順序：清單 → 詳細頁 → 選皮 → GO → 結果 → 清單。 */
+    /**  派遣頁面順序：清單 → 詳細頁 → 選皮 → GO → 結果 → 清單。 */
     private void handleExpeditionDispatch(List<PetalMatcher.Token> tokens, Bitmap bitmap) {
         if (expeditionDispatchSession == null || activeGameBoundsStrict() == null) {
             stopWithError(getString(R.string.status_reward_left_game));

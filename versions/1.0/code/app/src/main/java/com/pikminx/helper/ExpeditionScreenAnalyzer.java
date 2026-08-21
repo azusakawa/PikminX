@@ -11,7 +11,7 @@ import java.util.function.IntBinaryOperator;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** PikminX 自己的探險頁 OCR 判斷；不依賴 AutoCool 的座標或雲端辨識。 */
+/** PikminX 自己的探險頁 OCR 判斷；不依賴  的座標或雲端辨識。 */
 final class ExpeditionScreenAnalyzer {
     enum Screen {
         EXPLORE_LIST,
@@ -242,7 +242,7 @@ final class ExpeditionScreenAnalyzer {
         return false;
     }
 
-    /** AutoCool 同樣先定位探險頁籤，再從該安全錨點向上拉起面板。 */
+    /**  同樣先定位探險頁籤，再從該安全錨點向上拉起面板。 */
     static Point findExploreTabAnchor(
             List<PetalMatcher.Token> tokens, int width, int height) {
         for (PetalMatcher.Token token : tokens) {
@@ -307,7 +307,7 @@ final class ExpeditionScreenAnalyzer {
     }
 
     /**
-     * 尋找派遣結果頁左下角的亮色 X。門檻取自 AutoCool 的外觀思路，
+     * 尋找派遣結果頁左下角的亮色 X。門檻取自  的外觀思路，
      * 但座標、畫素與判斷全部由 PikminX 當前截圖重新計算。
      */
     static Point findResultClose(Bitmap bitmap) {
