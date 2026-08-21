@@ -1,5 +1,8 @@
 # PikminX
 
+> 本專案為公開原始碼，但採用非商業使用授權，
+> 禁止未經作者書面同意的任何商業使用。
+
 PikminX 是一個以 Android 無障礙服務為基礎的 Pikmin Bloom 輔助工具原始碼專案。
 
 應用程式的主要程式碼與資源檔案，不包含完整 Android Studio 建置設定、Gradle wrapper、測試程式或 APK。
