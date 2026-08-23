@@ -74,8 +74,25 @@ PikminX 依賴 Android AccessibilityService 實現自動化：
 
 ---
 
+## 💬 玩家交流社群
+
+歡迎加入 PikminX 的 LINE 專屬社群，與其他使用者交流設定心得、回報問題或接收最新開發資訊：
+👉 [點此加入 PikminX LINE 交流群](https://line.me/ti/g2/kBeFvQzEdGSJ3J48e9tkkEljK2wq0Mxb_FauOA?utm_source=invitation&utm_medium=link_copy&utm_campaign=default)
+
+**入群規範與提醒：**
+- **互助為主**：本專案依「現況」無償提供，社群以玩家互助為核心，不保證提供即時的一對一技術支援。
+- **嚴禁商業行為**：本專案為非營利性質，群內嚴禁任何形式之商業宣傳、付費代掛、代客安裝或帳號買賣。
+- **風險自負**：討論與使用相關工具的風險均由個人承擔。
+- **低調使用**：為確保專案與社群的長期運作，請避免在遊戲官方平台或其他大型公開論壇高調宣傳。
+  
+<img width="170" height="170" alt="QrCode" src="https://github.com/user-attachments/assets/b359bd0d-aa0d-4d56-a017-37c8be95fede" />
+
+---
+
 ## ☕ 支持專案開發
 
 如果這個專案對您有幫助，歡迎請開發者喝杯咖啡，支持後續的維護與更新！
+👉 [點此前往歐付寶進行小額贊助](https://payment.opay.tw/Broadcaster/Donate/0CB6EDA6EAB8577A8D33F1E8E346BC2A)
 
-<img width="250" height="250" alt="S__318242819" src="https://github.com/user-attachments/assets/d4b00bf9-6579-4430-aabc-164f01bdd7c4" />
+[<img width="170" height="170" alt="S__318242819" src="https://github.com/user-attachments/assets/d4b00bf9-6579-4430-aabc-164f01bdd7c4" />](https://payment.opay.tw/Broadcaster/Donate/0CB6EDA6EAB8577A8D33F1E8E346BC2A)
+
