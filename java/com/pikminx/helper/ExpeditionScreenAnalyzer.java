@@ -27,33 +27,38 @@ final class ExpeditionScreenAnalyzer {
     }
 
     record Target(ItemKind kind, String label, int x, int y) {
-        String confirmationKey() {
-            return kind.name() + ":" + normalize(label) + ":" + (x / 24) + ":" + (y / 24);
+        String confirmationKey(int width, int height) {
+            int xBucket = Math.round(x * 10f / Math.max(1, width));
+            int yBucket = Math.round(y * 10f / Math.max(1, height));
+            return kind.name() + ":" + xBucket + ":" + yBucket;
         }
     }
 
     record Point(int x, int y) {}
 
-    private static final List<String> FRUIT_NAMES = List.of(
-            "青蘋果", "紅蘋果", "蘋果", "苹果", "檸檬", "柠檬", "桃子", "梅子",
-            "柳橙", "橘子", "葡萄", "草莓", "藍莓", "蓝莓", "鳳梨", "凤梨",
-            "西瓜", "櫻桃", "樱桃", "梨");
     private static final Pattern COUNTER = Pattern.compile("(?<!\\d)(\\d{1,2})[/／|Il](\\d{1,2})(?!\\d)");
+    private static final Pattern HAN_TEXT = Pattern.compile("\\p{IsHan}");
+    private static final Pattern LATIN_TEXT = Pattern.compile("[A-Z]");
+    private static final Pattern DIGIT_TEXT = Pattern.compile("\\d");
+    private static final Pattern CARD_DURATION = Pattern.compile(
+            ".*\\d{1,2}(?:日|天|小時|小时|分鐘|分钟|分).*");
 
     static Screen classify(List<PetalMatcher.Token> tokens) {
         String text = joined(tokens);
-        boolean selection = hasSelectionCounter(text)
-                || (containsAny(text, "自動", "自动") && containsAny(text, "GO", "篩選", "筛选", "排序"));
+        boolean selectionControl = hasExactToken(tokens, "自動", "自动", "GO", "篩選", "筛选", "排序");
+        boolean selection = hasSelectionCounter(text) && selectionControl
+                || hasExactToken(tokens, "自動", "自动")
+                        && hasExactToken(tokens, "GO", "篩選", "筛选", "排序");
         if (selection) {
             return Screen.PIKMIN_SELECTION;
         }
-        if (containsAny(text, "前往探險", "前往探险", "前往探索", "派皮克敏")) {
+        if (hasDetailPageMarker(text)) {
             return Screen.DETAIL;
         }
         if (containsAny(text, "派遣完成", "探險開始", "探险开始", "已出發", "已出发")) {
             return Screen.RESULT;
         }
-        if (looksLikeExploreList(text)) {
+        if (looksLikeExploreList(tokens)) {
             return Screen.EXPLORE_LIST;
         }
         int visibleItems = 0;
@@ -65,25 +70,109 @@ final class ExpeditionScreenAnalyzer {
         return Screen.UNKNOWN;
     }
 
-    /** OCR 可能仍留在清單文字；實際按鈕出現時就視為詳細頁。 */
+    private static boolean hasDetailPageMarker(String text) {
+        return containsAny(text,
+                "派皮克敏出去探險吧", "派皮克敏出去探险吧", "派皮克敏出去探索吧",
+                "派皮克敏出去探臉吧")
+                || containsAny(text, "派皮克敏")
+                        && containsAny(text, "出去探險吧", "出去探险吧", "出去探索吧", "出去探臉吧");
+    }
+
+    /** 詳細頁只接受固定頁面標記 OCR，不依賴按鈕顏色或背景亮度。 */
     static Screen classify(
             List<PetalMatcher.Token> tokens,
             int width,
             int height,
-            IntBinaryOperator pixelAt) {
+            IntBinaryOperator ignoredPixelAt) {
         Screen screen = classify(tokens);
-        if (screen == Screen.PIKMIN_SELECTION || screen == Screen.RESULT) {
-            return screen;
-        }
-        return FlowerDetailActionDetector.find(width, height, pixelAt) == null
-                ? screen : Screen.DETAIL;
+        return screen == Screen.UNKNOWN && hasScrolledExploreListEvidence(tokens, width, height)
+                ? Screen.EXPLORE_LIST : screen;
     }
 
-    static boolean looksLikeExploreList(String normalizedText) {
-        String text = normalize(normalizedText);
-        return containsAny(text, "花苗和水果", "飾品一覽", "饰品一览", "發現日", "发现日")
-                || (text.contains("探險") || text.contains("探险"))
-                && containsAny(text, "花苗", "小時", "小时", "分鐘", "分钟");
+    /** 只使用詳細頁中央偏下操作區的 OCR，並容許按鈕文字被拆成相鄰兩段。 */
+    static Point findDetailAction(
+            List<PetalMatcher.Token> tokens,
+            int width,
+            int height,
+            IntBinaryOperator ignoredPixelAt) {
+        for (PetalMatcher.Token token : tokens) {
+            String value = normalize(token.text());
+            if (matchesDetailActionText(value)
+                    && isDetailActionRegion(token, width, height)) {
+                return new Point(token.centerX(), token.centerY());
+            }
+        }
+        for (PetalMatcher.Token first : tokens) {
+            if (!isDetailActionRegion(first, width, height)) {
+                continue;
+            }
+            for (PetalMatcher.Token second : tokens) {
+                if (first == second || first.centerX() >= second.centerX()
+                        || !isDetailActionRegion(second, width, height)
+                        || Math.abs(first.centerY() - second.centerY()) > height * 0.04f
+                        || second.left() - first.right() > width * 0.12f
+                        || !matchesDetailActionText(normalize(first.text() + second.text()))) {
+                    continue;
+                }
+                return new Point(
+                        (Math.min(first.left(), second.left()) + Math.max(first.right(), second.right())) / 2,
+                        (Math.min(first.top(), second.top()) + Math.max(first.bottom(), second.bottom())) / 2);
+            }
+        }
+        return null;
+    }
+
+    private static boolean matchesDetailActionText(String value) {
+        if (containsAny(value, "前往探險", "前往探险", "前往探索", "前往探臉")) {
+            return true;
+        }
+        if (!containsAny(value, "探險", "探险")) {
+            return false;
+        }
+        return containsThreeOfFourAlignedCharacters(value, "前往探險")
+                || containsThreeOfFourAlignedCharacters(value, "前往探险");
+    }
+
+    private static boolean containsThreeOfFourAlignedCharacters(
+            String value, String expected) {
+        for (int start = 0; start + expected.length() <= value.length(); start++) {
+            int matches = 0;
+            for (int index = 0; index < expected.length(); index++) {
+                if (value.charAt(start + index) == expected.charAt(index)) {
+                    matches++;
+                }
+            }
+            if (matches >= 3) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isDetailActionRegion(
+            PetalMatcher.Token token, int width, int height) {
+        return token.centerX() >= width * 0.20f
+                && token.centerX() <= width * 0.80f
+                && token.centerY() >= height * 0.60f
+                && token.centerY() <= height * 0.82f;
+    }
+
+    static boolean looksLikeExploreList(List<PetalMatcher.Token> tokens) {
+        String text = joined(tokens);
+        if (containsAny(text, "花苗和水果", "飾品一覽", "饰品一览")) {
+            return true;
+        }
+        if (!containsAny(text, "探險", "探险")) {
+            return false;
+        }
+        int durationCount = 0;
+        for (PetalMatcher.Token token : tokens) {
+            if (CARD_DURATION.matcher(normalize(token.text())).matches()
+                    && ++durationCount >= 2) {
+                return true;
+            }
+        }
+        return false;
     }
 
     static Target findTarget(
@@ -101,17 +190,32 @@ final class ExpeditionScreenAnalyzer {
             int height,
             IntBinaryOperator pixelAt) {
         List<Target> candidates = new ArrayList<>();
+        int itemSectionTop = -1;
+        for (PetalMatcher.Token token : tokens) {
+            if (containsAny(normalize(token.text()), "花苗和水果")) {
+                itemSectionTop = token.centerY();
+                break;
+            }
+        }
         for (PetalMatcher.Token token : tokens) {
             if (token.centerY() < height * 0.24f || token.centerY() > height * 0.86f
-                    || token.centerX() < width * 0.08f || token.centerX() > width * 0.92f) {
+                    || token.centerX() < width * 0.08f || token.centerX() > width * 0.92f
+                    || itemSectionTop >= 0 && token.centerY() <= itemSectionTop) {
                 continue;
             }
             String text = normalize(token.text());
             ItemKind kind = itemKind(text);
+            if (kind == null && isLikelyFruitCardName(tokens, token, width, height)) {
+                kind = ItemKind.FRUIT;
+            }
             if (kind == null || belongsToActiveCard(tokens, token, width, height)) {
                 continue;
             }
             if (pixelAt != null) {
+                if (ReturnRewardDetector.looksLikeGift(
+                        width, height, token.centerX(), token.top(), pixelAt)) {
+                    continue;
+                }
                 boolean visualPot = looksLikePotStyle(
                         width, height, token.centerX(), token.top(), pixelAt);
                 if ((mode == ExpeditionTargetMode.POT && !visualPot)
@@ -130,57 +234,6 @@ final class ExpeditionScreenAnalyzer {
         return candidates.stream()
                 .max(Comparator.comparingInt(Target::y).thenComparingInt(Target::x))
                 .orElse(null);
-    }
-
-    /** 將局部放大 OCR 的座標還原後，沿用同一套派遣目標過濾。 */
-    static Target findFocusedTarget(
-            List<PetalMatcher.Token> tokens,
-            ExpeditionTargetMode mode,
-            int width,
-            int height,
-            int cropTop,
-            int scale) {
-        List<PetalMatcher.Token> mapped = new ArrayList<>(tokens.size());
-        for (PetalMatcher.Token token : tokens) {
-            mapped.add(new PetalMatcher.Token(
-                    token.text(),
-                    token.left() / scale,
-                    cropTop + token.top() / scale,
-                    token.right() / scale,
-                    cropTop + token.bottom() / scale));
-        }
-        return findTarget(mapped, mode, width, height);
-    }
-
-    static Target findFocusedTarget(
-            List<PetalMatcher.Token> tokens,
-            ExpeditionTargetMode mode,
-            int width,
-            int height,
-            int cropTop,
-            int scale,
-            int focusedWidth,
-            int focusedHeight,
-            IntBinaryOperator focusedPixelAt) {
-        List<PetalMatcher.Token> mapped = new ArrayList<>(tokens.size());
-        for (PetalMatcher.Token token : tokens) {
-            mapped.add(new PetalMatcher.Token(
-                    token.text(),
-                    token.left() / scale,
-                    cropTop + token.top() / scale,
-                    token.right() / scale,
-                    cropTop + token.bottom() / scale));
-        }
-        IntBinaryOperator mappedPixelAt = (x, y) -> {
-            int focusedX = x * scale;
-            int focusedY = (y - cropTop) * scale;
-            if (focusedX < 0 || focusedX >= focusedWidth
-                    || focusedY < 0 || focusedY >= focusedHeight) {
-                return Color.WHITE;
-            }
-            return focusedPixelAt.applyAsInt(focusedX, focusedY);
-        };
-        return findTarget(mapped, mode, width, height, mappedPixelAt);
     }
 
     /** 九種花盆共通外觀：上半部有綠芽，中間有橫向棕色土壤。 */
@@ -242,6 +295,53 @@ final class ExpeditionScreenAnalyzer {
         return false;
     }
 
+    static boolean isExplorePanelExpanded(
+            List<PetalMatcher.Token> tokens, int width, int height) {
+        // 可見卡片只能證明目前在探險清單，不能證明面板已上拉到掃描起點。
+        return isExplorePanelExpanded(tokens, height);
+    }
+
+    static boolean hasExploreNavigationAnchor(
+            List<PetalMatcher.Token> tokens, int width, int height) {
+        return findExactExploreNavigationAnchor(tokens, width, height) != null;
+    }
+
+    private static boolean hasScrolledExploreListEvidence(
+            List<PetalMatcher.Token> tokens, int width, int height) {
+        Point anchor = findExactExploreNavigationAnchor(tokens, width, height);
+        if (anchor == null) {
+            return false;
+        }
+        for (PetalMatcher.Token token : tokens) {
+            if (token.centerY() <= anchor.y() + height * 0.03f) {
+                continue;
+            }
+            String text = normalize(token.text());
+            if (CARD_DURATION.matcher(text).matches()
+                    || containsSeedling(text)
+                    || containsAny(text, "完成", "領取", "领取", "飾品一覽", "饰品一览")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static Point findExactExploreNavigationAnchor(
+            List<PetalMatcher.Token> tokens, int width, int height) {
+        for (PetalMatcher.Token token : tokens) {
+            String text = normalize(token.text());
+            if ((text.equals("探險") || text.equals("探险"))
+                    && token.centerY() > height * 0.08f
+                    && token.centerY() < height * 0.65f
+                    && (width == Integer.MAX_VALUE
+                            || token.centerX() > width * 0.40f
+                                    && token.centerX() < width * 0.82f)) {
+                return new Point(token.centerX(), token.centerY());
+            }
+        }
+        return null;
+    }
+
     /**  同樣先定位探險頁籤，再從該安全錨點向上拉起面板。 */
     static Point findExploreTabAnchor(
             List<PetalMatcher.Token> tokens, int width, int height) {
@@ -277,6 +377,56 @@ final class ExpeditionScreenAnalyzer {
         return null;
     }
 
+    /** 只接受皮克敏選取頁控制列上的「自動」，避免點到其他 OCR 文字。 */
+    static Point findPikminAutoButton(
+            List<PetalMatcher.Token> tokens, int width, int height) {
+        for (PetalMatcher.Token token : tokens) {
+            String text = normalize(token.text());
+            if ((text.equals("自動") || text.equals("自动"))
+                    && token.centerX() > width * 0.04f
+                    && token.centerX() < width * 0.55f
+                    && token.centerY() > height * 0.32f
+                    && token.centerY() < height * 0.50f) {
+                return new Point(token.centerX(), token.centerY());
+            }
+        }
+        return null;
+    }
+
+    static String pikminAutoDiagnostic(
+            List<PetalMatcher.Token> tokens, int width, int height) {
+        for (PetalMatcher.Token token : tokens) {
+            String text = normalize(token.text());
+            if (!text.equals("自動") && !text.equals("自动")) {
+                continue;
+            }
+            String reason = token.centerX() <= width * 0.04f ? "x_too_far_left"
+                    : token.centerX() >= width * 0.55f ? "x_too_far_right"
+                    : token.centerY() <= height * 0.32f ? "y_too_high"
+                    : token.centerY() >= height * 0.50f ? "y_too_low"
+                    : "accepted";
+            return "text=\"" + token.text() + "\" bounds=["
+                    + token.left() + "," + token.top() + ","
+                    + token.right() + "," + token.bottom() + "] reason=" + reason;
+        }
+        return "reason=no_exact_auto_token";
+    }
+
+    /** GO 只會在選取完成後出現在右下角；限制區域可同時作為選取成功證據。 */
+    static Point findPikminGoButton(
+            List<PetalMatcher.Token> tokens, int width, int height) {
+        for (PetalMatcher.Token token : tokens) {
+            if (normalize(token.text()).equals("GO")
+                    && token.centerX() > width * 0.60f
+                    && token.centerX() < width * 0.98f
+                    && token.centerY() > height * 0.70f
+                    && token.centerY() < height * 0.98f) {
+                return new Point(token.centerX(), token.centerY());
+            }
+        }
+        return null;
+    }
+
     /** 搜尋圖示沒有文字；以同列的「自動」OCR 錨點取得它的實際列位置。 */
     static Point findPikminSearchButton(
             List<PetalMatcher.Token> tokens, int width, int height) {
@@ -304,6 +454,19 @@ final class ExpeditionScreenAnalyzer {
             }
         }
         return false;
+    }
+
+    /** 回傳選取頁計數的已選數量；找不到合法的 0/10 類計數時回傳 -1。 */
+    static int selectedPikminCount(List<PetalMatcher.Token> tokens) {
+        Matcher matcher = COUNTER.matcher(joined(tokens));
+        while (matcher.find()) {
+            int selected = Integer.parseInt(matcher.group(1));
+            int limit = Integer.parseInt(matcher.group(2));
+            if (limit >= 1 && limit <= 12 && selected >= 0 && selected <= limit) {
+                return selected;
+            }
+        }
+        return -1;
     }
 
     /**
@@ -379,15 +542,60 @@ final class ExpeditionScreenAnalyzer {
     }
 
     private static ItemKind itemKind(String text) {
-        if (containsSeedling(text)) {
-            return ItemKind.POT;
+        return containsSeedling(text) ? ItemKind.POT : null;
+    }
+
+    /** 水果名稱不建表；只接受下方緊鄰地點文字的卡片名稱。 */
+    private static boolean isLikelyFruitCardName(
+            List<PetalMatcher.Token> tokens,
+            PetalMatcher.Token candidate,
+            int width,
+            int height) {
+        String text = normalize(candidate.text());
+        if (!HAN_TEXT.matcher(text).find()
+                || DIGIT_TEXT.matcher(text).find()
+                || isTinySingleCharacterNoise(candidate, text, width, height)
+                || containsSeedling(text)
+                || containsGift(text)
+                || containsAny(text, "蘑菇", "磨菇", "完成", "領取", "领取", "探險", "探险",
+                        "飾品一覽", "饰品一览", "明信片", "花苗和水果")) {
+            return false;
         }
-        for (String fruit : FRUIT_NAMES) {
-            if (text.contains(normalize(fruit))) {
-                return ItemKind.FRUIT;
+        for (PetalMatcher.Token token : tokens) {
+            if (token == candidate) {
+                continue;
+            }
+            int gap = token.top() - candidate.bottom();
+            boolean directlyBelow = gap >= -height * 0.01f && gap <= height * 0.09f;
+            boolean sameColumn = Math.abs(token.centerX() - candidate.centerX()) <= width * 0.18f;
+            String metadata = normalize(token.text());
+            if (directlyBelow && sameColumn && metadata.length() >= 3
+                    && (LATIN_TEXT.matcher(metadata).find()
+                            || hasCardDurationBelow(tokens, token, width, height))) {
+                return true;
             }
         }
-        return text.contains("檬") && text.length() <= 12 ? ItemKind.FRUIT : null;
+        return false;
+    }
+
+    private static boolean hasCardDurationBelow(
+            List<PetalMatcher.Token> tokens,
+            PetalMatcher.Token location,
+            int width,
+            int height) {
+        for (PetalMatcher.Token token : tokens) {
+            if (token == location) {
+                continue;
+            }
+            int gap = token.top() - location.bottom();
+            boolean directlyBelow = gap >= -height * 0.01f && gap <= height * 0.08f;
+            boolean sameColumn = Math.abs(token.centerX() - location.centerX()) <= width * 0.18f;
+            if (directlyBelow && sameColumn
+                    && CARD_DURATION.matcher(normalize(token.text())).matches()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static boolean belongsToActiveCard(
@@ -397,6 +605,15 @@ final class ExpeditionScreenAnalyzer {
             int height) {
         for (PetalMatcher.Token token : tokens) {
             String text = normalize(token.text());
+            boolean sameCardColumn = Math.abs(token.centerX() - candidate.centerX())
+                    <= width * 0.18f;
+            int statusGap = candidate.top() - token.bottom();
+            boolean statusAbove = statusGap >= 0 && statusGap <= height * 0.10f;
+            if (sameCardColumn && statusAbove
+                    && (CARD_DURATION.matcher(text).matches()
+                            || containsAny(text, "完成"))) {
+                return true;
+            }
             if (!containsAny(text, "剩餘時間", "剩余时间", "查看皮克敏", "中止", "終止", "使用無人機")) {
                 continue;
             }
@@ -407,6 +624,13 @@ final class ExpeditionScreenAnalyzer {
             }
         }
         return false;
+    }
+
+    private static boolean isTinySingleCharacterNoise(
+            PetalMatcher.Token token, String text, int width, int height) {
+        return text.codePointCount(0, text.length()) == 1
+                && token.right() - token.left() < width * 0.03f
+                && token.bottom() - token.top() < height * 0.012f;
     }
 
     private static boolean hasSelectionCounter(String text) {
@@ -421,8 +645,25 @@ final class ExpeditionScreenAnalyzer {
         return text.matches(".*最多\\d{1,2}.{0,8}皮克敏.*");
     }
 
+    private static boolean hasExactToken(
+            List<PetalMatcher.Token> tokens, String... values) {
+        for (PetalMatcher.Token token : tokens) {
+            String text = normalize(token.text());
+            for (String value : values) {
+                if (text.equals(normalize(value))) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     private static boolean containsSeedling(String text) {
-        return containsAny(text, "花苗", "大花苗", "苗");
+        return text.endsWith(normalize("花苗"));
+    }
+
+    private static boolean containsGift(String text) {
+        return containsAny(text, "禮品", "礼品");
     }
 
     private static boolean containsAny(String text, String... values) {

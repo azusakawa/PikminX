@@ -34,6 +34,9 @@ final class ExpeditionDispatchSession {
     }
 
     private static final long STAGE_TIMEOUT_MILLIS = 24_000L;
+    private static final int REQUIRED_DESTINATION_FRAMES = 2;
+    private static final long DETAIL_TAP_RETRY_DELAY_MILLIS = 3_500L;
+    private static final int MAX_DETAIL_TAP_ATTEMPTS = 2;
 
     private final int targetCount;
     private Stage stage = Stage.LIST_SEARCH;
@@ -45,6 +48,13 @@ final class ExpeditionDispatchSession {
     private static final int MAX_BOTTOM_SETTLE_SWIPES = 4;
     private int bottomSwipeAttempts;
     private boolean bottomSettled;
+    private boolean transitionPending;
+    private ExpeditionScreenAnalyzer.Screen pendingDestinationScreen =
+            ExpeditionScreenAnalyzer.Screen.UNKNOWN;
+    private int matchingDestinationFrames;
+    private boolean postReturnRevealPending;
+    private int detailTapAttempts;
+    private long detailTapAt;
 
     ExpeditionDispatchSession(int targetCount, long nowMillis) {
         this.targetCount = Math.max(1, Math.min(99, targetCount));
@@ -70,6 +80,11 @@ final class ExpeditionDispatchSession {
     BottomSettleDecision observeListForBottom(
             boolean panelExpanded,
             long nowMillis) {
+        if (postReturnRevealPending) {
+            postReturnRevealPending = false;
+            stageStartedAt = nowMillis;
+            return BottomSettleDecision.SWIPE_UP;
+        }
         if (bottomSettled) {
             return BottomSettleDecision.READY;
         }
@@ -100,6 +115,45 @@ final class ExpeditionDispatchSession {
 
     void recordListTargetFound() {
         listMissFrames = 0;
+    }
+
+    boolean transitionPending() {
+        return transitionPending;
+    }
+
+    /** Starts a bounded wait for the destination screen without treating the gesture as progress. */
+    void beginTransition(long nowMillis) {
+        transitionPending = true;
+        stageStartedAt = nowMillis;
+        pendingKey = "";
+        matchingFrames = 0;
+        resetDestinationEvidence();
+    }
+
+    /** Records the initial detail-page tap or its single bounded retry. */
+    boolean beginDetailTapTransition(long nowMillis) {
+        if (stage != Stage.DETAIL || detailTapAttempts >= MAX_DETAIL_TAP_ATTEMPTS) {
+            return false;
+        }
+        detailTapAttempts++;
+        detailTapAt = nowMillis;
+        beginTransition(nowMillis);
+        return true;
+    }
+
+    /** Retry only when the same detail page remains visible after the gesture settle time. */
+    boolean shouldRetryDetailTap(
+            ExpeditionScreenAnalyzer.Screen screen, long nowMillis) {
+        return stage == Stage.DETAIL
+                && transitionPending
+                && screen == ExpeditionScreenAnalyzer.Screen.DETAIL
+                && detailTapAttempts > 0
+                && detailTapAttempts < MAX_DETAIL_TAP_ATTEMPTS
+                && nowMillis - detailTapAt >= DETAIL_TAP_RETRY_DELAY_MILLIS;
+    }
+
+    int detailTapAttempts() {
+        return detailTapAttempts;
     }
 
     /** 同一頁內的有效操作也算進度，避免長流程被固定頁面逾時中止。 */
@@ -141,7 +195,12 @@ final class ExpeditionDispatchSession {
         stageStartedAt = nowMillis;
         pendingKey = "";
         matchingFrames = 0;
+        transitionPending = false;
+        resetDestinationEvidence();
         resetListScan();
+        if (next == Stage.DETAIL || expected == Stage.DETAIL) {
+            resetDetailTap();
+        }
         return true;
     }
 
@@ -149,6 +208,11 @@ final class ExpeditionDispatchSession {
         listMissFrames = 0;
         bottomSwipeAttempts = 0;
         bottomSettled = false;
+    }
+
+    private void resetDetailTap() {
+        detailTapAttempts = 0;
+        detailTapAt = 0L;
     }
 
     /** 手勢成功只代表 Android 接受輸入；看到目的頁後才推進派遣階段。 */
@@ -165,7 +229,18 @@ final class ExpeditionDispatchSession {
                     ? Stage.VERIFY_RETURN : null;
             case VERIFY_RETURN -> null;
         };
-        return next != null && advance(stage, next, nowMillis);
+        if (next == null) {
+            resetDestinationEvidence();
+            return false;
+        }
+        if (screen != pendingDestinationScreen) {
+            pendingDestinationScreen = screen;
+            matchingDestinationFrames = 1;
+            return false;
+        }
+        matchingDestinationFrames++;
+        return matchingDestinationFrames >= REQUIRED_DESTINATION_FRAMES
+                && advance(stage, next, nowMillis);
     }
 
     boolean recordReturnedToList(long nowMillis) {
@@ -177,8 +252,16 @@ final class ExpeditionDispatchSession {
         stageStartedAt = nowMillis;
         pendingKey = "";
         matchingFrames = 0;
+        transitionPending = false;
+        resetDestinationEvidence();
         resetListScan();
+        postReturnRevealPending = true;
         return true;
+    }
+
+    private void resetDestinationEvidence() {
+        pendingDestinationScreen = ExpeditionScreenAnalyzer.Screen.UNKNOWN;
+        matchingDestinationFrames = 0;
     }
 
     private static boolean allowed(Stage from, Stage to) {

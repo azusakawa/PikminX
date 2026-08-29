@@ -41,8 +41,6 @@ public final class MainActivity extends Activity {
             "https://payment.opay.tw/Broadcaster/Donate/0CB6EDA6EAB8577A8D33F1E8E346BC2A";
 
     private TextView serviceStatus;
-    private TextView remoteConfigNotice;
-    private Button remoteConfigUpdate;
     private Button overlayToggle;
     private SettingsStore settings;
 
@@ -70,7 +68,6 @@ public final class MainActivity extends Activity {
             serviceStatus.setTextColor(enabled ? PRIMARY : MUTED);
             updateOverlayButton();
         }
-        refreshRemoteConfig();
     }
 
     /** 組合主畫面，讓每個區塊有一致的間距與卡片背景。 */
@@ -102,20 +99,6 @@ public final class MainActivity extends Activity {
         serviceStatus.setContentDescription(getString(R.string.main_service_status_description));
         service.addView(serviceStatus, matchParams());
         addSpace(service, 10);
-
-        remoteConfigNotice = text("", 14, MUTED);
-        remoteConfigNotice.setVisibility(View.GONE);
-        service.addView(remoteConfigNotice, matchParams());
-        remoteConfigUpdate = secondaryButton(R.string.main_download_update);
-        remoteConfigUpdate.setVisibility(View.GONE);
-        remoteConfigUpdate.setOnClickListener(view -> {
-            String url = (String) view.getTag();
-            if (url != null && !url.isBlank()) {
-                openExternalLink(url);
-            }
-        });
-        service.addView(remoteConfigUpdate, matchParams());
-        addSpace(service, 8);
 
         CheckBox riskAccepted = new CheckBox(this);
         riskAccepted.setText(R.string.main_risk_acknowledgement);
@@ -168,53 +151,6 @@ public final class MainActivity extends Activity {
         help.addView(sectionDescription(R.string.main_help_description));
         content.addView(help, matchParams());
         return scroll;
-    }
-
-    /** 讀取遠端版本與服務狀態；只顯示通知，不在背景自動安裝 APK。 */
-    private void refreshRemoteConfig() {
-        if (remoteConfigNotice == null || remoteConfigUpdate == null) {
-            return;
-        }
-        RemoteConfigClient.fetch(this, remoteConfig -> {
-            if (remoteConfig == null) {
-                remoteConfigNotice.setVisibility(View.GONE);
-                remoteConfigUpdate.setVisibility(View.GONE);
-                return;
-            }
-            boolean blocked = remoteConfig.blocksAutomation(BuildConfig.VERSION_CODE);
-            boolean updateAvailable = remoteConfig.updateAvailable(BuildConfig.VERSION_CODE);
-            if (!blocked && !updateAvailable) {
-                remoteConfigNotice.setVisibility(View.GONE);
-                remoteConfigUpdate.setVisibility(View.GONE);
-                return;
-            }
-
-            String notice;
-            if (blocked) {
-                notice = remoteConfig.message();
-            } else if (!remoteConfig.latestVersionName().isEmpty()) {
-                notice = getString(
-                        R.string.main_update_available,
-                        remoteConfig.latestVersionName());
-            } else {
-                notice = getString(R.string.main_update_available_generic);
-            }
-            remoteConfigNotice.setText(notice);
-            remoteConfigNotice.setTextColor(blocked ? WARNING_TEXT : PRIMARY_DARK);
-            remoteConfigNotice.setVisibility(View.VISIBLE);
-
-            String downloadUrl = remoteConfig.downloadUrl();
-            if (updateAvailable && !downloadUrl.isEmpty()) {
-                remoteConfigUpdate.setTag(downloadUrl);
-                remoteConfigUpdate.setText(remoteConfig.forceUpdate()
-                        ? R.string.main_download_required_update
-                        : R.string.main_download_update);
-                remoteConfigUpdate.setVisibility(View.VISIBLE);
-            } else {
-                remoteConfigUpdate.setTag(null);
-                remoteConfigUpdate.setVisibility(View.GONE);
-            }
-        });
     }
 
     /** 顯示必要的風險提示，但不讓提示搶走主要設定操作。 */

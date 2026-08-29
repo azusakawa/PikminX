@@ -110,11 +110,6 @@ final class PetalMatcher {
                         Math.max(0, match.labelTop() - Math.round(height * 0.075f)));
     }
 
-    /** 全畫面或局部 OCR 都以相同的連續兩幀規則確認搜尋結果。 */
-    static boolean hasStableSearchResult(int confirmations) {
-        return confirmations >= 2;
-    }
-
     /** Returns true when the selected pot has been changed away from the expected flower. */
     static boolean needsSelectionCorrection(String expectedFlower, Selection highlighted) {
         return highlighted != null
@@ -333,11 +328,6 @@ final class PetalMatcher {
 
     /** 統一 OCR 與使用者輸入的空白、標點與大小寫。 */
     static String normalize(String value) {
-        if (value == null) {
-            return "";
-        }
-        return Normalizer.normalize(value, Normalizer.Form.NFKC)
-                .toLowerCase(Locale.ROOT)
-                .replaceAll("[\\p{P}\\p{Z}\\s]+", "");
+        return TextNormalizer.normalizeForMatch(value);
     }
 }

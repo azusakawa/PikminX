@@ -1,8 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- 應用程式宣告主設定 Activity 與 Pikmin Bloom 專用無障礙服務。 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <uses-permission android:name="android.permission.INTERNET" />
-
     <queries>
         <package android:name="com.nianticlabs.pikmin" />
     </queries>

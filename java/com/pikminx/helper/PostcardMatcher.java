@@ -796,10 +796,14 @@ final class PostcardMatcher {
         }
         for (PetalMatcher.Token first : tokens) {
             for (PetalMatcher.Token second : tokens) {
+                int horizontalTolerance = Math.max(
+                        first.right() - first.left(), second.right() - second.left()) * 2;
+                int verticalTolerance = Math.max(
+                        first.bottom() - first.top(), second.bottom() - second.top()) * 3;
                 if (first == second
                         || second.top() < first.top()
-                        || Math.abs(first.centerX() - second.centerX()) > 180
-                        || second.top() - first.bottom() > 100) {
+                        || Math.abs(first.centerX() - second.centerX()) > horizontalTolerance
+                        || second.top() - first.bottom() > verticalTolerance) {
                     continue;
                 }
                 if (normalize(first.text() + second.text()).contains(key)) {
@@ -834,12 +838,7 @@ final class PostcardMatcher {
     }
 
     static String normalize(String value) {
-        if (value == null) {
-            return "";
-        }
-        return Normalizer.normalize(value, Normalizer.Form.NFKC)
-                .toLowerCase(Locale.ROOT)
-                .replaceAll("[\\p{P}\\p{Z}\\s]+", "");
+        return TextNormalizer.normalizeForMatch(value);
     }
 
     /** Removes map-bubble navigation glyphs that OCR may merge into the location name. */

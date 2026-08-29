@@ -5,6 +5,8 @@ import java.util.function.IntBinaryOperator;
 
 /** Finds the large returned fruit or seedling pot shown in the center of the squad screen. */
 final class ReturnRewardDetector {
+    private static final float MIN_REWARD_CONFIDENCE = 0.20f;
+
     record Target(int x, int y, int width, int height, float confidence) {
         boolean samePosition(Target other, int screenWidth, int screenHeight) {
             return other != null
@@ -22,7 +24,7 @@ final class ReturnRewardDetector {
         int step = Math.max(2, Math.round(width / 216f));
         int left = Math.round(width * 0.18f);
         int right = Math.round(width * 0.82f);
-        int top = Math.round(height * 0.40f);
+        int top = Math.round(height * 0.52f);
         int bottom = Math.round(height * 0.70f);
         int gridWidth = Math.max(1, (right - left + step - 1) / step);
         int gridHeight = Math.max(1, (bottom - top + step - 1) / step);
@@ -86,11 +88,11 @@ final class ReturnRewardDetector {
                     || componentHeight < height * 0.045f
                     || componentHeight > height * 0.26f
                     || (componentWidth > width * 0.38f
-                            && componentHeight < height * 0.14f)
+                            && componentHeight < height * 0.085f)
                     || fill < 0.12f
                     || areaRatio < 0.003f
                     || centerX < width * 0.27f
-                    || centerX > width * 0.73f
+                    || centerX > width * 0.85f
                     || centerY < height * 0.43f
                     || centerY > height * 0.67f
                     || !hasFieldLikeBackground(width, height, centerX, centerY, pixelAt)
@@ -100,6 +102,9 @@ final class ReturnRewardDetector {
             float centerPenalty = Math.abs(centerX - width * 0.50f) / width
                     + Math.abs(centerY - height * 0.56f) / height;
             float confidence = areaRatio * 8f + fill * 0.35f - centerPenalty * 0.2f;
+            if (confidence < MIN_REWARD_CONFIDENCE) {
+                continue;
+            }
             Target candidate = new Target(
                     centerX, centerY, componentWidth, componentHeight, confidence);
             if (best == null || candidate.confidence() > best.confidence()) {
@@ -178,7 +183,7 @@ final class ReturnRewardDetector {
     }
 
     /** Excludes the red-ribbon, neutral-box gift icon that must never be collected as fruit. */
-    private static boolean looksLikeGift(
+    static boolean looksLikeGift(
             int width,
             int height,
             int centerX,

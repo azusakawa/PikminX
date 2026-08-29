@@ -1,6 +1,7 @@
 package com.pikminx.helper;
 
 import android.graphics.Bitmap;
+import android.os.Build;
 
 import com.google.mlkit.vision.common.InputImage;
 import com.google.mlkit.vision.text.Text;
@@ -25,23 +26,17 @@ import java.util.concurrent.atomic.AtomicReference;
  * 離線模型涵蓋拉丁、中文、天城文、日文與韓文；未涵蓋文字系統不能假裝已讀懂其語意。
  */
 final class OcrScanner implements AutoCloseable {
-    interface Callback {
-        void onSuccess(List<PetalMatcher.Token> tokens);
+    interface FrameCallback {
+        void onSuccess(OcrScan.Frame frame);
         void onFailure(Exception error);
     }
 
     private enum Script {
-        LATIN("Latin"),
-        CHINESE("Chinese"),
-        DEVANAGARI("Devanagari"),
-        JAPANESE("Japanese"),
-        KOREAN("Korean");
-
-        private final String label;
-
-        Script(String label) {
-            this.label = label;
-        }
+        LATIN,
+        CHINESE,
+        DEVANAGARI,
+        JAPANESE,
+        KOREAN
     }
 
     private record RecognizerEntry(Script script, TextRecognizer recognizer) {}
@@ -63,50 +58,151 @@ final class OcrScanner implements AutoCloseable {
         return List.of("Latin", "Chinese", "Devanagari", "Japanese", "Korean");
     }
 
-    /** 非同步辨識單張遊戲截圖；所有內建文字系統完成後才回傳合併結果。 */
-    void scan(Bitmap bitmap, Executor executor, Callback callback) {
-        InputImage image = InputImage.fromBitmap(bitmap, 0);
+    /** 依流程 profile 統一裁切、縮放、辨識及還原來源座標。 */
+    void scan(
+            Bitmap bitmap,
+            OcrScan.Profile profile,
+            CaptureGeometry captureGeometry,
+            Executor executor,
+            FrameCallback callback) {
+        if (captureGeometry == null) {
+            callback.onFailure(new IllegalArgumentException("Capture geometry is required"));
+            return;
+        }
+        OcrScan.Transform transform = OcrScan.Transform.create(
+                profile, bitmap.getWidth(), bitmap.getHeight(), captureGeometry);
+        Bitmap analysis;
+        try {
+            analysis = analysisBitmap(bitmap, transform);
+        } catch (RuntimeException error) {
+            if (BuildConfig.GEOMETRY_VALIDATION) {
+                recordGeometryFailure(profile, transform, captureGeometry, error);
+            }
+            callback.onFailure(error);
+            return;
+        }
+        boolean ownsAnalysis = analysis != bitmap;
+        InputImage image;
+        try {
+            image = InputImage.fromBitmap(analysis, 0);
+        } catch (RuntimeException error) {
+            if (ownsAnalysis) {
+                analysis.recycle();
+            }
+            if (BuildConfig.GEOMETRY_VALIDATION) {
+                recordGeometryFailure(profile, transform, captureGeometry, error);
+            }
+            callback.onFailure(error);
+            return;
+        }
         List<ScoredToken> recognized = Collections.synchronizedList(new ArrayList<>());
-        AtomicInteger pending = new AtomicInteger(recognizers.size());
+        RecognizerEntry chineseRecognizer = recognizers.stream()
+                .filter(entry -> entry.script() == Script.CHINESE)
+                .findFirst()
+                .orElseThrow();
+        List<RecognizerEntry> selectedRecognizers = profile.scriptMode()
+                == OcrScan.ScriptMode.CHINESE
+                ? List.of(chineseRecognizer)
+                : recognizers;
+        AtomicInteger pending = new AtomicInteger(selectedRecognizers.size());
         AtomicReference<Exception> firstFailure = new AtomicReference<>();
-        for (RecognizerEntry entry : recognizers) {
+        long startedAt = android.os.SystemClock.elapsedRealtime();
+        for (RecognizerEntry entry : selectedRecognizers) {
             entry.recognizer().process(image)
                     .addOnSuccessListener(executor, text -> recognized.addAll(tokens(text, entry.script())))
-                    .addOnFailureListener(error -> firstFailure.compareAndSet(null, error))
+                    .addOnFailureListener(executor, error -> firstFailure.compareAndSet(null, error))
                     .addOnCompleteListener(executor, task -> {
                         if (pending.decrementAndGet() != 0) {
                             return;
                         }
-                        List<PetalMatcher.Token> merged = merge(recognized);
+                        List<PetalMatcher.Token> merged = transform.toSourceTokens(merge(recognized));
                         Exception failure = firstFailure.get();
                         if (merged.isEmpty() && failure != null) {
-                            callback.onFailure(failure);
-                        } else {
-                            callback.onSuccess(merged);
+                            try {
+                                if (BuildConfig.GEOMETRY_VALIDATION) {
+                                    recordGeometryFailure(
+                                            profile, transform, captureGeometry, failure);
+                                }
+                                callback.onFailure(failure);
+                            } finally {
+                                if (ownsAnalysis) {
+                                    analysis.recycle();
+                                }
+                            }
+                            return;
+                        }
+                        OcrScan.Frame frame = new OcrScan.Frame(
+                                profile,
+                                transform,
+                                merged,
+                                android.os.SystemClock.elapsedRealtime() - startedAt,
+                                analysis::getPixel,
+                                captureGeometry);
+                        try {
+                            if (BuildConfig.GEOMETRY_VALIDATION) {
+                                recordGeometrySuccess(frame);
+                            }
+                            callback.onSuccess(frame);
+                        } finally {
+                            if (ownsAnalysis) {
+                                analysis.recycle();
+                            }
                         }
                     });
         }
     }
 
-    /**
-     * 花盆清單只含中文名稱；局部放大後只跑中文模型，避免其他文字系統覆蓋
-     * 同一列結果，也能把第二次確認的延遲控制在可接受範圍。
-     */
-    void scanChinese(Bitmap bitmap, Executor executor, Callback callback) {
-        RecognizerEntry chinese = recognizers.stream()
-                .filter(entry -> entry.script() == Script.CHINESE)
-                .findFirst()
-                .orElseThrow();
-        InputImage image = InputImage.fromBitmap(bitmap, 0);
-        chinese.recognizer().process(image)
-                .addOnSuccessListener(executor, text -> {
-                    List<PetalMatcher.Token> result = new ArrayList<>();
-                    for (ScoredToken value : tokens(text, Script.CHINESE)) {
-                        result.add(value.token());
-                    }
-                    callback.onSuccess(result);
-                })
-                .addOnFailureListener(executor, callback::onFailure);
+    private void recordGeometrySuccess(OcrScan.Frame frame) {
+        if (!BuildConfig.GEOMETRY_VALIDATION) {
+            return;
+        }
+        try {
+            GeometryValidation.log(GeometryValidation.success(Build.VERSION.SDK_INT, frame));
+        } catch (RuntimeException ignored) {
+            // Developer diagnostics must never alter OCR behavior.
+        }
+    }
+
+    private void recordGeometryFailure(
+            OcrScan.Profile profile,
+            OcrScan.Transform transform,
+            CaptureGeometry captureGeometry,
+            Exception error) {
+        if (!BuildConfig.GEOMETRY_VALIDATION) {
+            return;
+        }
+        try {
+            GeometryValidation.log(GeometryValidation.failure(
+                    Build.VERSION.SDK_INT, profile, transform, captureGeometry, error));
+        } catch (RuntimeException ignored) {
+            // Developer diagnostics must never alter OCR behavior.
+        }
+    }
+
+    private Bitmap analysisBitmap(Bitmap source, OcrScan.Transform transform) {
+        if (transform.usesSourceBitmap()) {
+            return source;
+        }
+        Bitmap crop = null;
+        try {
+            crop = Bitmap.createBitmap(
+                    source,
+                    transform.cropLeft(),
+                    transform.cropTop(),
+                    transform.cropWidth(),
+                    transform.cropHeight());
+            Bitmap scaled = Bitmap.createScaledBitmap(
+                    crop, transform.analysisWidth(), transform.analysisHeight(), true);
+            if (scaled != crop) {
+                crop.recycle();
+            }
+            return scaled;
+        } catch (RuntimeException error) {
+            if (crop != null && crop != source && !crop.isRecycled()) {
+                crop.recycle();
+            }
+            throw error;
+        }
     }
 
     /** 將每個模型的文字與框座標保留為可依文字系統選優的 token。 */
