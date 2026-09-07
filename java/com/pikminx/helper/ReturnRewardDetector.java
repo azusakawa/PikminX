@@ -1,11 +1,26 @@
 package com.pikminx.helper;
 
 import java.util.ArrayDeque;
+import java.util.List;
 import java.util.function.IntBinaryOperator;
 
 /** Finds the large returned fruit or seedling pot shown in the center of the squad screen. */
 final class ReturnRewardDetector {
     private static final float MIN_REWARD_CONFIDENCE = 0.20f;
+
+    enum SquadCloseup {
+        SQUAD_CLOSEUP,
+        NOT_SQUAD_CLOSEUP,
+        UNKNOWN
+    }
+
+    record Region(int left, int top, int right, int bottom) {
+        Region {
+            if (right <= left || bottom <= top) {
+                throw new IllegalArgumentException("Region must have positive size");
+            }
+        }
+    }
 
     record Target(int x, int y, int width, int height, float confidence) {
         boolean samePosition(Target other, int screenWidth, int screenHeight) {
@@ -18,14 +33,29 @@ final class ReturnRewardDetector {
     private ReturnRewardDetector() {}
 
     static Target find(int width, int height, IntBinaryOperator pixelAt) {
+        return find(width, height, pixelAt, null);
+    }
+
+    static Target find(
+            int width,
+            int height,
+            IntBinaryOperator pixelAt,
+            Region region) {
         if (width <= 0 || height <= 0) {
             return null;
         }
         int step = Math.max(2, Math.round(width / 216f));
-        int left = Math.round(width * 0.18f);
-        int right = Math.round(width * 0.82f);
-        int top = Math.round(height * 0.52f);
-        int bottom = Math.round(height * 0.70f);
+        int left = region == null
+                ? Math.round(width * 0.18f) : clamp(region.left(), 0, width);
+        int right = region == null
+                ? Math.round(width * 0.82f) : clamp(region.right(), 0, width);
+        int top = region == null
+                ? Math.round(height * 0.52f) : clamp(region.top(), 0, height);
+        int bottom = region == null
+                ? Math.round(height * 0.70f) : clamp(region.bottom(), 0, height);
+        if (right <= left || bottom <= top) {
+            return null;
+        }
         int gridWidth = Math.max(1, (right - left + step - 1) / step);
         int gridHeight = Math.max(1, (bottom - top + step - 1) / step);
         boolean[] foreground = new boolean[gridWidth * gridHeight];
@@ -91,16 +121,19 @@ final class ReturnRewardDetector {
                             && componentHeight < height * 0.085f)
                     || fill < 0.12f
                     || areaRatio < 0.003f
-                    || centerX < width * 0.27f
-                    || centerX > width * 0.85f
-                    || centerY < height * 0.43f
-                    || centerY > height * 0.67f
+                    || (region == null
+                            && (centerX < width * 0.27f
+                                    || centerX > width * 0.85f
+                                    || centerY < height * 0.43f
+                                    || centerY > height * 0.67f))
                     || !hasFieldLikeBackground(width, height, centerX, centerY, pixelAt)
                     || looksLikeGift(width, height, centerX, centerY, pixelAt)) {
                 continue;
             }
-            float centerPenalty = Math.abs(centerX - width * 0.50f) / width
-                    + Math.abs(centerY - height * 0.56f) / height;
+            float expectedCenterX = region == null ? width * 0.50f : (left + right) / 2f;
+            float expectedCenterY = region == null ? height * 0.56f : (top + bottom) / 2f;
+            float centerPenalty = Math.abs(centerX - expectedCenterX) / width
+                    + Math.abs(centerY - expectedCenterY) / height;
             float confidence = areaRatio * 8f + fill * 0.35f - centerPenalty * 0.2f;
             if (confidence < MIN_REWARD_CONFIDENCE) {
                 continue;
@@ -112,6 +145,64 @@ final class ReturnRewardDetector {
             }
         }
         return best;
+    }
+
+    /** Uses scene scale and edge clipping, not Pikmin/decor colors, to detect the terminal closeup. */
+    static SquadCloseup classifySquadCloseup(
+            int width, int height, IntBinaryOperator pixelAt) {
+        if (width <= 0 || height <= 0 || pixelAt == null) {
+            return SquadCloseup.UNKNOWN;
+        }
+        float upperForeground = foregroundRatio(
+                width, height, 0.05f, 0.20f, 0.95f, 0.40f, pixelAt);
+        float middleForeground = foregroundRatio(
+                width, height, 0.05f, 0.38f, 0.95f, 0.62f, pixelAt);
+        float centerForeground = foregroundRatio(
+                width, height, 0.15f, 0.32f, 0.85f, 0.62f, pixelAt);
+        float leftEdgeForeground = foregroundRatio(
+                width, height, 0f, 0.25f, 0.18f, 0.62f, pixelAt);
+        float rightEdgeForeground = foregroundRatio(
+                width, height, 0.82f, 0.25f, 1f, 0.62f, pixelAt);
+        float edgeForeground = Math.max(leftEdgeForeground, rightEdgeForeground);
+        if (edgeForeground >= 0.24f
+                && Math.min(leftEdgeForeground, rightEdgeForeground) >= 0.16f) {
+            return SquadCloseup.SQUAD_CLOSEUP;
+        }
+        if (upperForeground >= 0.24f
+                && middleForeground >= 0.38f
+                && (edgeForeground >= 0.18f || centerForeground >= 0.44f)) {
+            return SquadCloseup.SQUAD_CLOSEUP;
+        }
+        if (upperForeground <= 0.18f
+                || middleForeground <= 0.30f
+                || (edgeForeground <= 0.12f && centerForeground <= 0.36f)) {
+            return SquadCloseup.NOT_SQUAD_CLOSEUP;
+        }
+        return SquadCloseup.UNKNOWN;
+    }
+
+    /** 識別回程領取期間出現在畫面下半部的精華容量警告，不進行點擊。 */
+    static boolean hasNectarCapacityWarning(
+            List<PetalMatcher.Token> tokens, int width, int height) {
+        if (tokens == null || width <= 0 || height <= 0) {
+            return false;
+        }
+        boolean nectar = false;
+        boolean capacity = false;
+        boolean full = false;
+        for (PetalMatcher.Token token : tokens) {
+            if (token.centerX() < width * 0.10f
+                    || token.centerX() > width * 0.90f
+                    || token.centerY() < height * 0.35f
+                    || token.centerY() > height * 0.85f) {
+                continue;
+            }
+            String text = PetalMatcher.normalize(token.text());
+            nectar |= text.contains("精華");
+            capacity |= text.contains("攜帶") || text.contains("空間");
+            full |= text.contains("滿");
+        }
+        return nectar && capacity && full;
     }
 
     private static void enqueue(
@@ -130,6 +221,36 @@ final class ReturnRewardDetector {
             visited[index] = true;
             queue.add(index);
         }
+    }
+
+    private static float foregroundRatio(
+            int width,
+            int height,
+            float leftRatio,
+            float topRatio,
+            float rightRatio,
+            float bottomRatio,
+            IntBinaryOperator pixelAt) {
+        int step = Math.max(2, Math.round(width / 216f));
+        int left = clamp(Math.round(width * leftRatio), 0, width - 1);
+        int right = clamp(Math.round(width * rightRatio), 0, width - 1);
+        int top = clamp(Math.round(height * topRatio), 0, height - 1);
+        int bottom = clamp(Math.round(height * bottomRatio), 0, height - 1);
+        int foreground = 0;
+        int samples = 0;
+        for (int y = top; y <= bottom; y += step) {
+            for (int x = left; x <= right; x += step) {
+                int color = pixelAt.applyAsInt(x, y);
+                int red = (color >>> 16) & 0xFF;
+                int green = (color >>> 8) & 0xFF;
+                int blue = color & 0xFF;
+                if (!(green >= red + 8 && green >= blue + 5 && green >= 60)) {
+                    foreground++;
+                }
+                samples++;
+            }
+        }
+        return samples == 0 ? 0f : foreground / (float) samples;
     }
 
     private static boolean isRewardPixel(int color) {

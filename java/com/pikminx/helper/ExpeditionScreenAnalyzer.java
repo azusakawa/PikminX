@@ -83,10 +83,24 @@ final class ExpeditionScreenAnalyzer {
             List<PetalMatcher.Token> tokens,
             int width,
             int height,
-            IntBinaryOperator ignoredPixelAt) {
+            IntBinaryOperator pixelAt) {
         Screen screen = classify(tokens);
+        if (screen == Screen.UNKNOWN
+                && hasSelectionCounter(joined(tokens))
+                && findPikminSearchButton(width, height, pixelAt) != null) {
+            return Screen.PIKMIN_SELECTION;
+        }
         return screen == Screen.UNKNOWN && hasScrolledExploreListEvidence(tokens, width, height)
                 ? Screen.EXPLORE_LIST : screen;
+    }
+
+    /** 詳細頁已經兩幀確認後，按遊戲內容區固定的相對按鈕中心，不再依賴按鈕 OCR。 */
+    static Point detailActionCenter(int width, int height) {
+        int maxX = Math.max(0, width - 1);
+        int maxY = Math.max(0, height - 1);
+        return new Point(
+                Math.min(maxX, Math.max(0, Math.round(width * 0.50f))),
+                Math.min(maxY, Math.max(0, Math.round(height * 0.75f))));
     }
 
     /** 只使用詳細頁中央偏下操作區的 OCR，並容許按鈕文字被拆成相鄰兩段。 */
@@ -122,15 +136,88 @@ final class ExpeditionScreenAnalyzer {
         return null;
     }
 
-    private static boolean matchesDetailActionText(String value) {
+    static String detailActionDiagnostic(
+            List<PetalMatcher.Token> tokens, int width, int height) {
+        String directRejection = null;
+        for (int index = 0; index < tokens.size(); index++) {
+            PetalMatcher.Token token = tokens.get(index);
+            String value = normalize(token.text());
+            String matchKind = detailActionMatchKind(value);
+            if (matchKind.equals("none")) {
+                continue;
+            }
+            if (isDetailActionRegion(token, width, height)) {
+                return "reason=direct_accepted token=" + index
+                        + " match=" + matchKind
+                        + " normalized=\"" + value + "\"";
+            }
+            if (directRejection == null) {
+                directRejection = "reason=direct_outside_region token=" + index
+                        + " match=" + matchKind
+                        + " normalized=\"" + value + "\""
+                        + " center=" + token.centerX() + "," + token.centerY();
+            }
+        }
+
+        String pairRejection = null;
+        for (int firstIndex = 0; firstIndex < tokens.size(); firstIndex++) {
+            PetalMatcher.Token first = tokens.get(firstIndex);
+            for (int secondIndex = 0; secondIndex < tokens.size(); secondIndex++) {
+                if (firstIndex == secondIndex) {
+                    continue;
+                }
+                PetalMatcher.Token second = tokens.get(secondIndex);
+                String combined = normalize(first.text() + second.text());
+                String matchKind = detailActionMatchKind(combined);
+                if (matchKind.equals("none")) {
+                    continue;
+                }
+                String reason = first.centerX() >= second.centerX() ? "pair_order"
+                        : !isDetailActionRegion(first, width, height)
+                                || !isDetailActionRegion(second, width, height)
+                                        ? "pair_outside_region"
+                        : Math.abs(first.centerY() - second.centerY()) > height * 0.04f
+                                ? "pair_row_gap"
+                        : second.left() - first.right() > width * 0.12f
+                                ? "pair_horizontal_gap"
+                        : "pair_accepted";
+                String detail = "reason=" + reason
+                        + " first=" + firstIndex
+                        + " second=" + secondIndex
+                        + " match=" + matchKind
+                        + " combined=\"" + combined + "\""
+                        + " firstCenter=" + first.centerX() + "," + first.centerY()
+                        + " secondCenter=" + second.centerX() + "," + second.centerY()
+                        + " rowDelta=" + Math.abs(first.centerY() - second.centerY())
+                        + " horizontalGap=" + (second.left() - first.right());
+                if (reason.equals("pair_accepted")) {
+                    return detail;
+                }
+                if (pairRejection == null) {
+                    pairRejection = detail;
+                }
+            }
+        }
+        if (directRejection != null) {
+            return directRejection;
+        }
+        return pairRejection != null ? pairRejection : "reason=no_text_match";
+    }
+
+    static boolean matchesDetailActionText(String value) {
+        return !detailActionMatchKind(value).equals("none");
+    }
+
+    static String detailActionMatchKind(String value) {
         if (containsAny(value, "前往探險", "前往探险", "前往探索", "前往探臉")) {
-            return true;
+            return "exact";
         }
         if (!containsAny(value, "探險", "探险")) {
-            return false;
+            return "none";
         }
         return containsThreeOfFourAlignedCharacters(value, "前往探險")
-                || containsThreeOfFourAlignedCharacters(value, "前往探险");
+                        || containsThreeOfFourAlignedCharacters(value, "前往探险")
+                ? "fuzzy_3_of_4" : "none";
     }
 
     private static boolean containsThreeOfFourAlignedCharacters(
@@ -149,7 +236,7 @@ final class ExpeditionScreenAnalyzer {
         return false;
     }
 
-    private static boolean isDetailActionRegion(
+    static boolean isDetailActionRegion(
             PetalMatcher.Token token, int width, int height) {
         return token.centerX() >= width * 0.20f
                 && token.centerX() <= width * 0.80f
@@ -377,39 +464,20 @@ final class ExpeditionScreenAnalyzer {
         return null;
     }
 
-    /** 只接受皮克敏選取頁控制列上的「自動」，避免點到其他 OCR 文字。 */
+    /** 僅接受皮克敏選擇控制區內、完整匹配的「自動」文字中心。 */
     static Point findPikminAutoButton(
             List<PetalMatcher.Token> tokens, int width, int height) {
         for (PetalMatcher.Token token : tokens) {
-            String text = normalize(token.text());
-            if ((text.equals("自動") || text.equals("自动"))
-                    && token.centerX() > width * 0.04f
-                    && token.centerX() < width * 0.55f
-                    && token.centerY() > height * 0.32f
-                    && token.centerY() < height * 0.50f) {
+            String value = normalize(token.text());
+            if ((value.equals("自動") || value.equals("自动"))
+                    && token.centerX() > width * 0.08f
+                    && token.centerX() < width * 0.38f
+                    && token.centerY() > height * 0.28f
+                    && token.centerY() < height * 0.86f) {
                 return new Point(token.centerX(), token.centerY());
             }
         }
         return null;
-    }
-
-    static String pikminAutoDiagnostic(
-            List<PetalMatcher.Token> tokens, int width, int height) {
-        for (PetalMatcher.Token token : tokens) {
-            String text = normalize(token.text());
-            if (!text.equals("自動") && !text.equals("自动")) {
-                continue;
-            }
-            String reason = token.centerX() <= width * 0.04f ? "x_too_far_left"
-                    : token.centerX() >= width * 0.55f ? "x_too_far_right"
-                    : token.centerY() <= height * 0.32f ? "y_too_high"
-                    : token.centerY() >= height * 0.50f ? "y_too_low"
-                    : "accepted";
-            return "text=\"" + token.text() + "\" bounds=["
-                    + token.left() + "," + token.top() + ","
-                    + token.right() + "," + token.bottom() + "] reason=" + reason;
-        }
-        return "reason=no_exact_auto_token";
     }
 
     /** GO 只會在選取完成後出現在右下角；限制區域可同時作為選取成功證據。 */
@@ -427,20 +495,51 @@ final class ExpeditionScreenAnalyzer {
         return null;
     }
 
-    /** 搜尋圖示沒有文字；以同列的「自動」OCR 錨點取得它的實際列位置。 */
+    /** 搜尋圖示沒有文字；只掃描左側控制區的深灰放大鏡，不依賴「自動」OCR。 */
     static Point findPikminSearchButton(
-            List<PetalMatcher.Token> tokens, int width, int height) {
-        for (PetalMatcher.Token token : tokens) {
-            String text = normalize(token.text());
-            if ((text.equals("自動") || text.equals("自动"))
-                    && token.centerX() > width * 0.12f
-                    && token.centerX() < width * 0.42f
-                    && token.centerY() > height * 0.32f
-                    && token.centerY() < height * 0.48f) {
-                return new Point(Math.round(width * 0.088f), token.centerY());
+            int width, int height, IntBinaryOperator pixelAt) {
+        if (width < 1 || height < 1 || pixelAt == null) {
+            return null;
+        }
+        int left = Math.max(0, Math.round(width * 0.035f));
+        int right = Math.min(width - 1, Math.round(width * 0.145f));
+        int top = Math.max(0, Math.round(height * 0.30f));
+        int bottom = Math.min(height - 1, Math.round(height * 0.48f));
+        int radius = Math.max(6, Math.round(height * 0.012f));
+        int[] rowCounts = new int[bottom - top + 1];
+        for (int y = top; y <= bottom; y++) {
+            for (int x = left; x <= right; x++) {
+                if (neutralDarkControl(pixelAt.applyAsInt(x, y))) {
+                    rowCounts[y - top]++;
+                }
             }
         }
-        return null;
+
+        int window = radius * 2 + 1;
+        int rolling = 0;
+        int bestCount = 0;
+        int bestStart = -1;
+        for (int index = 0; index < rowCounts.length; index++) {
+            rolling += rowCounts[index];
+            if (index >= window) {
+                rolling -= rowCounts[index - window];
+            }
+            if (index >= window - 1 && rolling > bestCount) {
+                bestCount = rolling;
+                bestStart = index - window + 1;
+            }
+        }
+        if (bestStart < 0 || bestCount < Math.max(12, Math.round(width * 0.05f))) {
+            return null;
+        }
+        long weightedY = 0;
+        int count = 0;
+        for (int index = bestStart; index < bestStart + window; index++) {
+            weightedY += (long) (top + index) * rowCounts[index];
+            count += rowCounts[index];
+        }
+        return count == 0 ? null : new Point(
+                Math.round(width * 0.09f), Math.round((float) weightedY / count));
     }
 
     static boolean hasFullSelection(List<PetalMatcher.Token> tokens) {
@@ -690,6 +789,15 @@ final class ExpeditionScreenAnalyzer {
         int blue = Color.blue(color);
         return red <= 145 && green >= 25 && green < 216 && blue >= 25 && blue < 216
                 && green >= red + 3 && blue >= red - 5;
+    }
+
+    private static boolean neutralDarkControl(int color) {
+        int red = (color >>> 16) & 0xff;
+        int green = (color >>> 8) & 0xff;
+        int blue = color & 0xff;
+        int minimum = Math.min(red, Math.min(green, blue));
+        int maximum = Math.max(red, Math.max(green, blue));
+        return maximum <= 175 && maximum - minimum <= 45;
     }
 
     private static boolean isSproutGreen(int color) {

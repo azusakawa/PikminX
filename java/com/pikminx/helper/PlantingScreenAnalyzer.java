@@ -7,6 +7,7 @@ import java.util.function.IntBinaryOperator;
 /** 只供自動種花使用的頁面與主要控制項判斷。 */
 final class PlantingScreenAnalyzer {
     enum Screen {
+        HOME,
         MAP_WITH_ENTRY,
         MAP_VISIBLE_NO_ENTRY,
         PLANTING_MENU,
@@ -34,6 +35,8 @@ final class PlantingScreenAnalyzer {
             Point stopControl,
             EntryEvidence entryEvidence) {}
 
+    private static final List<String> HOME_ANCHORS = List.of(
+            "飾品一覽", "好友", "通知", "商店", "步數");
     private static final List<String> MAP_ANCHORS = List.of(
             "步數", "商店", "好友", "通知", "飾品", "boost", "shop");
     private static final List<String> ASSISTANT_OVERLAY_ANCHORS = List.of(
@@ -43,6 +46,7 @@ final class PlantingScreenAnalyzer {
             "準備搜尋花盆",
             "點懸浮圖示",
             "正在確認地圖種花入口",
+            "找不到哨子相對入口",
             "已進入種花畫面");
 
     private PlantingScreenAnalyzer() {}
@@ -54,6 +58,7 @@ final class PlantingScreenAnalyzer {
             int height,
             IntBinaryOperator pixelAt) {
         List<PetalMatcher.Token> gameTokens = withoutAssistantOverlay(tokens);
+        boolean homeAnchored = matchingAnchorCount(gameTokens, HOME_ANCHORS) >= 2;
         boolean mapAnchored = containsAny(gameTokens, MAP_ANCHORS);
         CardHighlight.MapEntryMatch whistleMatch =
                 CardHighlight.findMapPlantingEntryAboveWhistle(width, height, pixelAt);
@@ -76,13 +81,21 @@ final class PlantingScreenAnalyzer {
                     point(stop),
                     entryEvidence);
         }
+        if (mapEntry != null) {
+            return new Detection(
+                    Screen.MAP_WITH_ENTRY,
+                    mapEntry,
+                    null,
+                    null,
+                    entryEvidence);
+        }
         return new Detection(
-                mapEntry != null
-                        ? Screen.MAP_WITH_ENTRY
+                homeAnchored
+                        ? Screen.HOME
                         : mapAnchored
                                 ? Screen.MAP_VISIBLE_NO_ENTRY
                                 : Screen.UNKNOWN,
-                mapEntry,
+                null,
                 point(start),
                 point(stop),
                 entryEvidence);
@@ -122,6 +135,17 @@ final class PlantingScreenAnalyzer {
             }
         }
         return false;
+    }
+
+    private static int matchingAnchorCount(
+            List<PetalMatcher.Token> tokens, List<String> anchors) {
+        int matches = 0;
+        for (String anchor : anchors) {
+            if (containsAny(tokens, List.of(anchor))) {
+                matches++;
+            }
+        }
+        return matches;
     }
 
     private static boolean containsAny(String value, List<String> anchors) {

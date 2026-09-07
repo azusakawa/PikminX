@@ -6,8 +6,8 @@ import java.util.List;
 final class PlantingFlowPolicy {
     enum EntryAction {
         OPEN_MAP_ENTRY,
-        BEGIN_POT_SEARCH,
-        WAIT_FOR_SCREEN
+        CONFIRM_PLANTING_MENU,
+        STOP_WRONG_SCREEN
     }
 
     enum StartAction {
@@ -28,8 +28,9 @@ final class PlantingFlowPolicy {
     static EntryAction entryAction(PlantingScreenAnalyzer.Screen screen) {
         return switch (screen) {
             case MAP_WITH_ENTRY -> EntryAction.OPEN_MAP_ENTRY;
-            case PLANTING_MENU -> EntryAction.BEGIN_POT_SEARCH;
-            case MAP_VISIBLE_NO_ENTRY, AMBIGUOUS, UNKNOWN -> EntryAction.WAIT_FOR_SCREEN;
+            case PLANTING_MENU -> EntryAction.CONFIRM_PLANTING_MENU;
+            case HOME, MAP_VISIBLE_NO_ENTRY, AMBIGUOUS, UNKNOWN ->
+                    EntryAction.STOP_WRONG_SCREEN;
         };
     }
 
@@ -56,10 +57,6 @@ final class PlantingFlowPolicy {
         return screen != PlantingScreenAnalyzer.Screen.PLANTING_MENU;
     }
 
-    static boolean shouldRecordPlantedFlower(boolean newlyStarted, boolean startTapped) {
-        return newlyStarted && startTapped;
-    }
-
     /** 高亮辨識優先；高亮不明確時才採用目前花名的精確 OCR 配對。 */
     static PetalMatcher.Selection monitoringSelection(
             PetalMatcher.Selection highlighted,
@@ -69,6 +66,10 @@ final class PlantingFlowPolicy {
 
     static boolean shouldUseFocusedMonitorOcr(int consecutiveMisses) {
         return consecutiveMisses >= 2;
+    }
+
+    static boolean shouldSkipCandidate(int remaining, int threshold) {
+        return remaining >= 0 && SwitchGuard.isBelowThreshold(remaining, threshold);
     }
 
     static LowCountDecision afterConfirmedLowCount(

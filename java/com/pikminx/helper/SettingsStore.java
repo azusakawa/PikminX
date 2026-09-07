@@ -24,6 +24,25 @@ final class SettingsStore {
         return preferences.getInt("threshold", 50);
     }
 
+    int feedsPerSquad() {
+        return Math.max(1, Math.min(10, preferences.getInt("feeds_per_squad", 6)));
+    }
+
+    int maxSquadSwitches() {
+        return Math.max(0, Math.min(120, preferences.getInt("max_squad_switches", 0)));
+    }
+
+    int nectarMinimumThreshold() {
+        return Math.max(0, Math.min(1200,
+                preferences.getInt("nectar_minimum_threshold", 40)));
+    }
+
+    int feedPetalLimit() {
+        int value = Math.max(300, Math.min(1200,
+                preferences.getInt("feed_petal_limit", 1200)));
+        return 300 + ((value - 300) / 50) * 50;
+    }
+
     /** 取得兩次 OCR 掃描之間的秒數。 */
     /** 取得上次使用者選擇的懸浮窗顯示狀態。 */
     boolean overlayVisible() {
@@ -80,6 +99,11 @@ final class SettingsStore {
         return preferences.getBoolean("return_reward_receive_postcard", true);
     }
 
+    /** 容量警告出現時是否仍繼續領取後續回程物品；預設停止。 */
+    boolean continueReturnRewardOnNectarWarning() {
+        return preferences.getBoolean("return_reward_continue_nectar_warning", false);
+    }
+
     /** 儲存懸浮窗顯示狀態。 */
     void setOverlayVisible(boolean visible) {
         preferences.edit().putBoolean("overlay_visible", visible).apply();
@@ -107,6 +131,21 @@ final class SettingsStore {
         preferences.edit()
                 .putInt("threshold", Math.max(1, Math.min(threshold, 9999)))
                 .putString("flowers", flowers.trim())
+                .apply();
+    }
+
+    void saveFeedSettings(
+            int feedsPerSquad,
+            int maxSquadSwitches,
+            int nectarMinimumThreshold,
+            int petalLimit) {
+        preferences.edit()
+                .putInt("feeds_per_squad", Math.max(1, Math.min(10, feedsPerSquad)))
+                .putInt("max_squad_switches", Math.max(0, Math.min(120, maxSquadSwitches)))
+                .putInt("nectar_minimum_threshold",
+                        Math.max(0, Math.min(1200, nectarMinimumThreshold)))
+                .putInt("feed_petal_limit", 300 + ((Math.max(300, Math.min(1200, petalLimit))
+                        - 300) / 50) * 50)
                 .apply();
     }
 
@@ -142,9 +181,11 @@ final class SettingsStore {
                 .apply();
     }
 
-    void saveReturnRewardSettings(boolean receivePostcard) {
+    void saveReturnRewardSettings(
+            boolean receivePostcard, boolean continueOnNectarWarning) {
         preferences.edit()
                 .putBoolean("return_reward_receive_postcard", receivePostcard)
+                .putBoolean("return_reward_continue_nectar_warning", continueOnNectarWarning)
                 .apply();
     }
 

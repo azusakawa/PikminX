@@ -10,6 +10,14 @@ final class OcrScan {
     enum ScriptMode { MULTILINGUAL, CHINESE }
     enum RoiBasis { SCREENSHOT, TARGET_WINDOW }
 
+    record TransactionId(long runGeneration, long captureSequence, long ocrRequestSequence) {
+        TransactionId {
+            if (runGeneration < 1 || captureSequence < 1 || ocrRequestSequence < 1) {
+                throw new IllegalArgumentException("Invalid OCR transaction identity");
+            }
+        }
+    }
+
     enum Profile {
         FULL_MULTILINGUAL(ScriptMode.MULTILINGUAL, RoiBasis.SCREENSHOT,
                 0f, 0f, 1f, 1f, 1080, 1440),
@@ -17,6 +25,8 @@ final class OcrScan {
                 0f, 0f, 1f, 1f, 1080, 1440),
         DISPATCH_LIST(ScriptMode.CHINESE, RoiBasis.TARGET_WINDOW,
                 0f, 0.18f, 1f, 0.90f, 1440, 2160),
+        PLANTING_SEARCH_RESULTS(ScriptMode.CHINESE, RoiBasis.TARGET_WINDOW,
+                0f, 0.18f, 1f, 1f, 1440, 2160),
         PETAL_LIST(ScriptMode.CHINESE, RoiBasis.TARGET_WINDOW,
                 0f, 0.44f, 1f, 0.96f, 1440, 2160);
 
@@ -71,7 +81,8 @@ final class OcrScan {
             int basisRight,
             int basisBottom,
             boolean fallbackToScreenshot,
-            String fallbackReason) {
+            String fallbackReason,
+            long captureSequence) {
 
         static Transform create(Profile profile, int sourceWidth, int sourceHeight) {
             return create(profile, sourceWidth, sourceHeight, null);
@@ -137,7 +148,8 @@ final class OcrScan {
                     basis.right(),
                     basis.bottom(),
                     fallbackToScreenshot,
-                    fallbackReason);
+                    fallbackReason,
+                    captureGeometry == null ? 0L : captureGeometry.captureSequence());
         }
 
         boolean usesSourceBitmap() {
@@ -202,22 +214,31 @@ final class OcrScan {
     }
 
     record Frame(
+            TransactionId transactionId,
             Profile profile,
             Transform transform,
             List<PetalMatcher.Token> tokens,
             long elapsedMillis,
             PixelReader analysisPixels,
-            CaptureGeometry captureGeometry) {
+            CaptureGeometry captureGeometry,
+            boolean complete) {
 
         Frame {
             tokens = List.copyOf(tokens);
-            if (captureGeometry == null) {
-                throw new IllegalArgumentException("Capture geometry is required");
+            if (transactionId == null || captureGeometry == null || transform == null) {
+                throw new IllegalArgumentException("Frame identity, transform and geometry are required");
             }
         }
 
         int sourceWidth() { return transform.sourceWidth(); }
         int sourceHeight() { return transform.sourceHeight(); }
+
+        boolean canDriveAction(TransactionId expectedTransaction) {
+            return complete
+                    && transactionId.equals(expectedTransaction)
+                    && transactionId.captureSequence() == captureGeometry.captureSequence()
+                    && captureGeometry.isActionSafe(transform);
+        }
 
         int pixelAtSource(int x, int y) {
             if (analysisPixels == null || !transform.containsSource(x, y)) {
