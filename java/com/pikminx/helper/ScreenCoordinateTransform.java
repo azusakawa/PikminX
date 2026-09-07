@@ -27,6 +27,26 @@ final class ScreenCoordinateTransform {
                         bounds.bottom() - 1));
     }
 
+    /** Maps a detected feed-search control from its display screenshot to screen coordinates. */
+    static Point feedSearchPointToScreen(int x, int y, CaptureGeometry geometry) {
+        if (feedSearchUsesDisplayBitmap(geometry)) {
+            // A display screenshot starts at the display origin. Resource display metrics may
+            // exclude a compatibility/inset area even when the captured game fills the bitmap.
+            return new Point(
+                    clamp(x, 0, geometry.bitmapWidth() - 1),
+                    clamp(y, 0, geometry.bitmapHeight() - 1));
+        }
+        return toScreen(x, y, geometry);
+    }
+
+    static boolean feedSearchUsesDisplayBitmap(CaptureGeometry geometry) {
+        CaptureGeometry.Bounds target = geometry.targetWindowBoundsOnScreen();
+        return geometry.mode() == CaptureGeometry.Mode.DISPLAY
+                && target != null
+                && target.width() == geometry.bitmapWidth()
+                && target.height() == geometry.bitmapHeight();
+    }
+
     /** Maps the capture-time target window into this screenshot's local coordinate space. */
     static ScreenshotRect targetWindowInScreenshot(CaptureGeometry geometry) {
         CaptureGeometry.Bounds target = geometry.targetWindowBoundsOnScreen();

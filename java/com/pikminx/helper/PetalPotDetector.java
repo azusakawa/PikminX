@@ -113,7 +113,7 @@ final class PetalPotDetector {
                 && token.centerY() < height * maximumLabelY;
     }
 
-    /** 數量沿用明信片流程的同欄、名稱上方最近值規則。 */
+    /** 數量只接受同一卡片、緊貼名稱上方的數字帶，排除上一列庫存及相鄰花盆。 */
     private static Match matchCount(
             List<PetalMatcher.Token> tokens,
             PetalMatcher.Token label,
@@ -122,30 +122,66 @@ final class PetalPotDetector {
             int height,
             float maximumCountXDistance,
             float maximumCountYDistance) {
-        PetalMatcher.Token best = null;
-        double bestDistance = Double.MAX_VALUE;
-        for (PetalMatcher.Token token : tokens) {
-            Integer count = parseCount(token.text());
-            if (count == null || count < minimumCount) {
-                continue;
-            }
-            int dx = Math.abs(token.centerX() - label.centerX());
-            int dy = label.top() - token.centerY();
-            if (dx > width * maximumCountXDistance
-                    || dy < 0
-                    || dy > height * maximumCountYDistance) {
-                continue;
-            }
-            double distance = dx * dx + dy * dy;
-            if (distance < bestDistance) {
-                best = token;
-                bestDistance = distance;
-            }
-        }
-        Integer count = best == null ? null : parseCount(best.text());
+        Integer count = findCardNumberAbove(
+                tokens,
+                label.centerX(),
+                label.top(),
+                minimumCount,
+                width,
+                height,
+                maximumCountXDistance,
+                0.005f,
+                maximumCountYDistance,
+                0.040f,
+                PetalPotDetector::parseCount);
         return count == null
                 ? null
                 : new Match(count, label.centerX(), label.centerY(), label.top());
+    }
+
+    /**
+     * 共用卡片數量配對：以卡片文字錨點建立相對數字帶，再取最接近期望位置的數值。
+     * 餵食流程可沿用同一幾何規則，但保留各自的數字解析與垂直帶設定。
+     */
+    static Integer findCardNumberAbove(
+            List<PetalMatcher.Token> tokens,
+            int anchorX,
+            int anchorY,
+            int minimumCount,
+            int width,
+            int height,
+            float maximumXDistance,
+            float nearestYDistance,
+            float farthestYDistance,
+            float expectedYDistance,
+            Function<String, Integer> numberParser) {
+        if (tokens == null || numberParser == null || width <= 0 || height <= 0) {
+            return null;
+        }
+        int maximumXDrift = Math.max(8, Math.round(width * maximumXDistance));
+        int top = anchorY - Math.round(height * farthestYDistance);
+        int bottom = anchorY - Math.round(height * nearestYDistance);
+        int expectedY = anchorY - Math.round(height * expectedYDistance);
+        Integer bestCount = null;
+        double bestDistance = Double.MAX_VALUE;
+        for (PetalMatcher.Token token : tokens) {
+            Integer count = numberParser.apply(token.text());
+            if (count == null
+                    || count < minimumCount
+                    || Math.abs(token.centerX() - anchorX) > maximumXDrift
+                    || token.centerY() < top
+                    || token.centerY() > bottom) {
+                continue;
+            }
+            double dx = token.centerX() - anchorX;
+            double dy = token.centerY() - expectedY;
+            double distance = dx * dx + dy * dy;
+            if (distance < bestDistance) {
+                bestCount = count;
+                bestDistance = distance;
+            }
+        }
+        return bestCount;
     }
 
     /** 解析花盆數量並容忍 OCR 常見的 O、I、l 與千分位誤識。 */

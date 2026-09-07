@@ -27,7 +27,50 @@ final class CardHighlight {
             int width,
             int height,
             IntBinaryOperator pixelAt) {
-        return findNeutralDarkControl(width, height, 0.91f, pixelAt);
+        int selectorY = findPetalSelectorY(width, height, pixelAt);
+        if (selectorY < 0) {
+            return null;
+        }
+        int tolerance = Math.max(8, Math.round(height * 0.025f));
+        return findNeutralDarkControl(
+                width,
+                height,
+                0.91f,
+                selectorY - tolerance,
+                selectorY + tolerance,
+                pixelAt);
+    }
+
+    /** 自動種花沿花色列水平尋找搜尋按鈕，不假設固定 X 座標。 */
+    static Point findPlantingPetalSearchButton(
+            int width,
+            int height,
+            IntBinaryOperator pixelAt) {
+        int selectorY = findPetalSelectorY(width, height, pixelAt);
+        if (selectorY < 0) {
+            return null;
+        }
+        int minimumColorPixels = Math.max(5, width / 100);
+        int blueX = colorCenterAt(
+                selectorY,
+                width,
+                0.27f,
+                0.38f,
+                minimumColorPixels,
+                CardHighlight::isPetalBlue,
+                pixelAt);
+        if (blueX < 0) {
+            return null;
+        }
+        int tolerance = Math.max(8, Math.round(height * 0.025f));
+        return findRightmostNeutralDarkControl(
+                width,
+                height,
+                blueX + Math.round(width * 0.10f),
+                Math.min(width - 1, Math.round(width * 0.98f)),
+                selectorY - tolerance,
+                selectorY + tolerance,
+                pixelAt);
     }
 
     /** 搜尋欄展開後，放大鏡會移到欄位左側。 */
@@ -54,6 +97,9 @@ final class CardHighlight {
         int[] queue = new int[visited.length];
         Point bestAnchor = null;
         int bestScore = -1;
+        int bestDistance = Integer.MAX_VALUE;
+        int expectedX = Math.round(width * 0.86f);
+        int expectedY = Math.round(height * 0.90f);
         int minimumBodyPixels = Math.max(50, width * height / 6000);
         for (int localY = 0; localY < regionHeight; localY++) {
             for (int localX = 0; localX < regionWidth; localX++) {
@@ -118,9 +164,16 @@ final class CardHighlight {
                         top + Math.min(regionHeight - 1, maxY + padding),
                         pixelAt);
                 int score = pixels + cyanPixels * 2;
-                if (cyanPixels >= Math.max(8, pixels / 30) && score > bestScore) {
-                    bestAnchor = new Point(sumX / pixels, sumY / pixels);
+                Point candidate = new Point(sumX / pixels, sumY / pixels);
+                int distance = Math.abs(candidate.x() - expectedX) * 1000 / width
+                        + Math.abs(candidate.y() - expectedY) * 1000 / height;
+                if (cyanPixels >= Math.max(8, pixels / 30)
+                        && distance <= 100
+                        && (distance < bestDistance
+                                || (distance == bestDistance && score > bestScore))) {
+                    bestAnchor = candidate;
                     bestScore = score;
+                    bestDistance = distance;
                 }
             }
         }
@@ -176,10 +229,62 @@ final class CardHighlight {
             int width,
             int height,
             IntBinaryOperator pixelAt) {
-        Point magnifier = findNeutralDarkControl(width, height, 0.08f, pixelAt);
+        int selectorY = findPetalSelectorY(width, height, pixelAt);
+        if (selectorY < 0) {
+            return null;
+        }
+        int minimumGap = Math.max(8, Math.round(height * 0.025f));
+        int maximumGap = Math.max(minimumGap + 1, Math.round(height * 0.09f));
+        Point magnifier = findNeutralDarkControl(
+                width,
+                height,
+                0.08f,
+                selectorY - maximumGap,
+                selectorY - minimumGap,
+                pixelAt);
         return magnifier == null
                 ? null
                 : new Point(Math.round(width * 0.91f), magnifier.y());
+    }
+
+    /** 以黃、紅、藍三個篩選圓點定位搜尋控制列，排除下方精華瓶及名稱文字。 */
+    private static int findPetalSelectorY(
+            int width,
+            int height,
+            IntBinaryOperator pixelAt) {
+        int minimumColorPixels = Math.max(5, width / 100);
+        int startY = Math.round(height * 0.10f);
+        int endY = Math.round(height * 0.55f);
+        int runStart = -1;
+        int bestStart = -1;
+        int bestEnd = -1;
+        for (int y = startY; y <= endY; y++) {
+            boolean matches = colorCenterAt(
+                    y, width, 0.11f, 0.21f, minimumColorPixels,
+                    CardHighlight::isPetalYellow, pixelAt) >= 0
+                    && colorCenterAt(
+                            y, width, 0.19f, 0.29f, minimumColorPixels,
+                            CardHighlight::isPetalRed, pixelAt) >= 0
+                    && colorCenterAt(
+                            y, width, 0.27f, 0.38f, minimumColorPixels,
+                            CardHighlight::isPetalBlue, pixelAt) >= 0;
+            if (matches) {
+                if (runStart < 0) {
+                    runStart = y;
+                }
+                continue;
+            }
+            if (runStart >= 0 && y - 1 - runStart > bestEnd - bestStart) {
+                bestStart = runStart;
+                bestEnd = y - 1;
+            }
+            runStart = -1;
+        }
+        if (runStart >= 0 && endY - runStart > bestEnd - bestStart) {
+            bestStart = runStart;
+            bestEnd = endY;
+        }
+        return bestStart < 0 ? -1 : (bestStart + bestEnd) / 2;
     }
 
     /** 尋找展開或收合種花面板中的開始按鈕中心點。 */
@@ -281,6 +386,7 @@ final class CardHighlight {
             if (isPlantingPanelControlRow(width, height, stop, pixelAt)) {
                 return new PlantingMenuControls(null, stop);
             }
+            return new PlantingMenuControls(null, null);
         }
         return null;
     }
@@ -590,11 +696,16 @@ final class CardHighlight {
             int width,
             int height,
             float xFraction,
+            int requestedStartY,
+            int requestedEndY,
             IntBinaryOperator pixelAt) {
         int centerX = Math.round(width * xFraction);
         int radius = Math.max(8, Math.round(width * 0.035f));
-        int startY = Math.round(height * 0.20f);
-        int endY = Math.round(height * 0.52f);
+        int startY = Math.max(radius, requestedStartY);
+        int endY = Math.min(height - radius - 1, requestedEndY);
+        if (startY > endY) {
+            return null;
+        }
         int bestY = -1;
         int bestCount = 0;
         for (int y = startY; y <= endY; y++) {
@@ -627,6 +738,111 @@ final class CardHighlight {
             }
         }
         return count == 0 ? null : new Point(sumX / count, sumY / count);
+    }
+
+    /** 沿花色列水平搜尋最右側深灰圖示，不假設搜尋按鈕固定在畫面寬度的 91%。 */
+    private static Point findRightmostNeutralDarkControl(
+            int width,
+            int height,
+            int requestedStartX,
+            int requestedEndX,
+            int requestedStartY,
+            int requestedEndY,
+            IntBinaryOperator pixelAt) {
+        int left = Math.max(0, requestedStartX);
+        int right = Math.min(width - 1, requestedEndX);
+        int top = Math.max(0, requestedStartY);
+        int bottom = Math.min(height - 1, requestedEndY);
+        if (left > right || top > bottom) {
+            return null;
+        }
+
+        int regionWidth = right - left + 1;
+        int regionHeight = bottom - top + 1;
+        boolean[] visited = new boolean[regionWidth * regionHeight];
+        int[] queue = new int[visited.length];
+        int minimumPixels = Math.max(8, width / 50);
+        Point best = null;
+        int bestRight = -1;
+        int bestPixels = -1;
+        for (int localY = 0; localY < regionHeight; localY++) {
+            for (int localX = 0; localX < regionWidth; localX++) {
+                int start = localY * regionWidth + localX;
+                if (visited[start]) {
+                    continue;
+                }
+                visited[start] = true;
+                if (!isNeutralDark(pixelAt.applyAsInt(left + localX, top + localY))) {
+                    continue;
+                }
+
+                int head = 0;
+                int tail = 0;
+                int pixels = 0;
+                int sumX = 0;
+                int sumY = 0;
+                int componentRight = localX;
+                queue[tail++] = start;
+                while (head < tail) {
+                    int current = queue[head++];
+                    int x = current % regionWidth;
+                    int y = current / regionWidth;
+                    pixels++;
+                    sumX += left + x;
+                    sumY += top + y;
+                    componentRight = Math.max(componentRight, x);
+                    if (x > 0) {
+                        tail = enqueueNeutralDark(
+                                current - 1, left, top, regionWidth,
+                                visited, queue, tail, pixelAt);
+                    }
+                    if (x + 1 < regionWidth) {
+                        tail = enqueueNeutralDark(
+                                current + 1, left, top, regionWidth,
+                                visited, queue, tail, pixelAt);
+                    }
+                    if (y > 0) {
+                        tail = enqueueNeutralDark(
+                                current - regionWidth, left, top, regionWidth,
+                                visited, queue, tail, pixelAt);
+                    }
+                    if (y + 1 < regionHeight) {
+                        tail = enqueueNeutralDark(
+                                current + regionWidth, left, top, regionWidth,
+                                visited, queue, tail, pixelAt);
+                    }
+                }
+                if (pixels >= minimumPixels
+                        && (componentRight > bestRight
+                                || (componentRight == bestRight && pixels > bestPixels))) {
+                    best = new Point(sumX / pixels, sumY / pixels);
+                    bestRight = componentRight;
+                    bestPixels = pixels;
+                }
+            }
+        }
+        return best;
+    }
+
+    private static int enqueueNeutralDark(
+            int index,
+            int left,
+            int top,
+            int regionWidth,
+            boolean[] visited,
+            int[] queue,
+            int tail,
+            IntBinaryOperator pixelAt) {
+        if (visited[index]) {
+            return tail;
+        }
+        visited[index] = true;
+        int x = index % regionWidth;
+        int y = index / regionWidth;
+        if (isNeutralDark(pixelAt.applyAsInt(left + x, top + y))) {
+            queue[tail++] = index;
+        }
+        return tail;
     }
 
     private static boolean isNeutralDark(int color) {

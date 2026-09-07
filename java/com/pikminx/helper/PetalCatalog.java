@@ -44,15 +44,16 @@ final class PetalCatalog {
         return PostcardPotCatalog.allNames().size();
     }
 
-    /** 自動換花仍以花種搜尋；基礎花瓣只輸入顏色。 */
+    /** 與餵食搜尋一致：基礎花瓣只輸入顏色，其他花盆輸入「顏色 花名」。 */
     static String searchQuery(String value) {
         String canonical = canonicalName(value);
         PostcardPotCatalog.Color color = PostcardPotCatalog.colorOf(canonical);
         if (canonical == null || color == null) {
             return "";
         }
-        String flower = canonical.substring(color.label().length());
-        return "花瓣".equals(flower) ? color.label() : flower;
+        return canonical.endsWith("花瓣")
+                ? color.label()
+                : PostcardPotCatalog.searchQuery(canonical);
     }
 
     private static List<Category> categoriesFromPostcardCatalog() {

@@ -6,16 +6,19 @@ final class ReturnRewardScanGuard {
         WAIT,
         POSTCARD,
         TARGET_CONFIRMED,
+        SQUAD_COMPLETE,
         COMPLETE
     }
 
     private static final int REQUIRED_TARGET_SCREENS = 2;
+    private static final int REQUIRED_SQUAD_CLOSEUP_SCREENS = 2;
     private static final int REQUIRED_CLEAR_SCREENS = 2;
     private static final int REQUIRED_EMPTY_SCREENS = 6;
     private ReturnRewardDetector.Target pending;
     private int targetScreens;
     private int targetClearScreens;
     private int emptyScreens;
+    private int squadCloseupScreens;
     private boolean awaitingTargetClear;
 
     Decision observe(
@@ -32,10 +35,36 @@ final class ReturnRewardScanGuard {
             int screenWidth,
             int screenHeight,
             boolean allowPersistentTarget) {
+        return observe(
+                page,
+                target,
+                screenWidth,
+                screenHeight,
+                allowPersistentTarget,
+                false);
+    }
+
+    Decision observe(
+            PostcardMatcher.Page page,
+            ReturnRewardDetector.Target target,
+            int screenWidth,
+            int screenHeight,
+            boolean allowPersistentTarget,
+            boolean squadCloseup) {
         if (page == PostcardMatcher.Page.POSTCARD_RECEIVED) {
             reset();
             return Decision.POSTCARD;
         }
+        if (squadCloseup) {
+            pending = null;
+            targetScreens = 0;
+            targetClearScreens = 0;
+            emptyScreens = 0;
+            awaitingTargetClear = false;
+            return ++squadCloseupScreens >= REQUIRED_SQUAD_CLOSEUP_SCREENS
+                    ? Decision.SQUAD_COMPLETE : Decision.WAIT;
+        }
+        squadCloseupScreens = 0;
         if (target == null) {
             pending = null;
             targetScreens = 0;
@@ -85,6 +114,7 @@ final class ReturnRewardScanGuard {
         targetScreens = 0;
         targetClearScreens = 0;
         emptyScreens = 0;
+        squadCloseupScreens = 0;
         awaitingTargetClear = false;
     }
 }

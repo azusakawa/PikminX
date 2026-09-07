@@ -143,10 +143,13 @@ final class ExpeditionDispatchSession {
 
     /** Retry only when the same detail page remains visible after the gesture settle time. */
     boolean shouldRetryDetailTap(
-            ExpeditionScreenAnalyzer.Screen screen, long nowMillis) {
+            ExpeditionScreenAnalyzer.Screen screen,
+            boolean detailActionVisible,
+            long nowMillis) {
         return stage == Stage.DETAIL
                 && transitionPending
                 && screen == ExpeditionScreenAnalyzer.Screen.DETAIL
+                && detailActionVisible
                 && detailTapAttempts > 0
                 && detailTapAttempts < MAX_DETAIL_TAP_ATTEMPTS
                 && nowMillis - detailTapAt >= DETAIL_TAP_RETRY_DELAY_MILLIS;

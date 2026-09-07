@@ -3,7 +3,9 @@ package com.pikminx.helper;
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.GestureDescription;
 import android.graphics.Bitmap;
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.Rect;
 import android.graphics.drawable.GradientDrawable;
@@ -25,6 +27,7 @@ import android.view.accessibility.AccessibilityWindowInfo;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
@@ -48,6 +51,16 @@ import java.util.function.Predicate;
  * 確認搜尋文字、完整目標名稱與右下角數量後點擊，不會滾動花盆清單。</p>
  */
 public final class PetalAccessibilityService extends AccessibilityService {
+    private record ScreenshotRequest(
+            List<ScreenshotOverlayMask.Region> overlayRegions,
+            long generation,
+            CaptureGeometry.Mode captureMode,
+            CaptureGeometry.Bounds expectedSourceBoundsOnScreen,
+            CaptureGeometry.Bounds targetWindowBoundsOnScreen,
+            int displayId,
+            int windowId,
+            long sequence) {}
+
     private static final String TAG = "PikminX";
     private static final String GAME_PACKAGE = "com.nianticlabs.pikmin";
     private static final int MAX_ACTION_ATTEMPTS = 3;
@@ -62,25 +75,65 @@ public final class PetalAccessibilityService extends AccessibilityService {
     private static final long POSTCARD_FAST_SCAN_DELAY_MILLIS = 450L;
     private static final long DISPATCH_SCAN_DELAY_MILLIS = 850L;
     private static final long DISPATCH_AFTER_TAP_DELAY_MILLIS = 1600L;
-    private static final long DISPATCH_PIKMIN_TAP_DELAY_MILLIS = 350L;
+    private static final long DISPATCH_AUTO_VERIFY_DELAY_MILLIS = 450L;
+    private static final long DISPATCH_PIKMIN_TAP_DELAY_MILLIS = 250L;
     private static final long DISPATCH_AFTER_SCROLL_DELAY_MILLIS = 250L;
+    private static final long SCREENSHOT_CALLBACK_TIMEOUT_MILLIS = 6000L;
+    private static final long OCR_CALLBACK_TIMEOUT_MILLIS = 6000L;
     private static final long RETURN_REWARD_SCAN_DELAY_MILLIS = 1000L;
     private static final long RETURN_REWARD_AFTER_TAP_DELAY_MILLIS = 1000L;
+    private static final long RETURN_REWARD_FRAME_HIDE_DELAY_MILLIS = 50L;
     private static final long RETURN_REWARD_SETTLE_MILLIS = 1500L;
     private static final long RETURN_REWARD_PERSISTENT_TARGET_REARM_MILLIS = 3000L;
     private static final long RETURN_REWARD_TIMEOUT_MILLIS = 5 * 60 * 1000L;
+    private static final int RETURN_REWARD_REQUIRED_WARNING_FRAMES = 2;
+    private static final long FEED_OCR_RETRY_MILLIS = 500L;
+    private static final long FEED_SQUAD_SETTLE_MILLIS = 1000L;
+    private static final long FEED_NO_EFFECT_TIMEOUT_MILLIS = 10_000L;
+    private static final long FEED_DRAG_MILLIS = 700L;
+    private static final long FEED_HOLD_SAMPLE_MILLIS = 1000L;
+    private static final long FEED_HOLD_MIN_MILLIS = 2000L;
+    private static final long FEED_HOLD_MAX_MILLIS = 10_000L;
+    private static final long FEED_COLLECT_SCAN_MILLIS = 250L;
+    private static final long FEED_SPIRAL_HANDOFF_MILLIS = 100L;
+    private static final long FEED_SPIRAL_HARVEST_MILLIS = 6000L;
+    private static final long FEED_HARVEST_RECEIPT_WINDOW_MILLIS = 2500L;
+    private static final long FEED_HARVEST_RECEIPT_QUIET_MILLIS = 500L;
+    private static final long FEED_HARVEST_RECEIPT_MAX_WINDOW_MILLIS = 5000L;
+    private static final long FEED_ZOOM_MILLIS = 650L;
+    private static final long FEED_ZOOM_SETTLE_MILLIS = 1000L;
+    private static final long FEED_NECTAR_SELECT_TAP_MILLIS = 20L;
+    private static final long FEED_DETAIL_CLOSE_SETTLE_MILLIS = 800L;
+    private static final long FEED_WHISTLE_TAP_GAP_MILLIS = 100L;
+    private static final int FEED_MAX_GESTURES_PER_ROUND = 4;
+    private static final int FEED_MAX_TARGET_MISSING_FRAMES = 8;
+    private static final int FEED_REQUIRED_SEARCH_FRAMES = 2;
+    private static final int FEED_REQUIRED_NECTAR_TARGET_FRAMES = 2;
+    private static final int FEED_REQUIRED_PANEL_CLOSED_FRAMES = 2;
+    private static final int FEED_PANEL_CLOSE_RETRY_FRAMES = 3;
+    private static final int FEED_MAX_NECTAR_TAP_ATTEMPTS = 2;
+    private static final int FEED_WHISTLE_TAP_COUNT = 3;
+    private static final int FEED_HOLD_REQUIRED_STABLE_READS = 3;
+    private static final int FEED_SPIRAL_SEGMENTS = 160;
+    private static final int FEED_REQUIRED_BLOOM_TARGET_FRAMES = 2;
+    private static final int FEED_MAX_BLOOM_TARGET_MISSING_FRAMES = 8;
+    private static final int FEED_DETAIL_RETURN_FRAMES = 6;
     // 搜尋框、鍵盤與 Unity 清單都有轉場動畫；每個搜尋步驟先等一秒。
     private static final long POSTCARD_PETAL_STEP_DELAY_MILLIS = 1000L;
-    // 懸浮圖示需要盡量不遮擋遊戲地圖；仍保留足夠的內邊距避免誤觸。
-    static final int OVERLAY_SIZE_DP = 40;
-    private static final int OVERLAY_PADDING_DP = 5;
-    private static final int OVERLAY_GREEN = Color.rgb(25, 92, 57);
-    private static final int OVERLAY_SURFACE = Color.rgb(251, 253, 249);
-    private static final int OVERLAY_BORDER = Color.rgb(198, 220, 201);
-    private static final int OVERLAY_MUTED = Color.rgb(78, 96, 83);
-    private static final int OVERLAY_MINT = Color.rgb(229, 244, 232);
-    private static final int OVERLAY_CREAM = Color.rgb(255, 249, 237);
-    private static final int OVERLAY_ACCENT = Color.rgb(181, 63, 43);
+    // 懸浮 ICON 與使用者指定尺寸一致；背景透明，避免額外黑框。
+    static final int OVERLAY_SIZE_DP = 50;
+    private static final int NOTICE_MAX_WIDTH_DP = 190;
+    private static final int NOTICE_GAP_DP = 4;
+    private static final int NOTICE_EDGE_DP = 8;
+    private static final int OVERLAY_GREEN = Color.rgb(35, 122, 80);
+    private static final int OVERLAY_SURFACE = Color.rgb(251, 252, 251);
+    private static final int OVERLAY_BORDER = Color.rgb(223, 231, 225);
+    private static final int OVERLAY_MUTED = Color.rgb(99, 118, 111);
+    private static final int OVERLAY_MINT = Color.rgb(231, 245, 236);
+    private static final int OVERLAY_SURFACE_2 = Color.rgb(246, 248, 246);
+    private static final int OVERLAY_INFO = Color.rgb(234, 242, 249);
+    private static final int OVERLAY_CREAM = Color.rgb(255, 245, 217);
+    private static final int OVERLAY_ACCENT = Color.rgb(168, 67, 61);
     private static final int OVERLAY_WARNING = Color.rgb(156, 39, 39);
     private static final int OVERLAY_SEARCH = Color.rgb(62, 113, 137);
     private static final int OVERLAY_RECOGNIZING = Color.rgb(167, 120, 33);
@@ -93,6 +146,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
         MONITORING,
         REVEALING_SEARCH_PANEL,
         OPENING_SEARCH,
+        CLEARING_SEARCH,
         ENTERING_SEARCH,
         CLOSING_SEARCH_KEYBOARD,
         SELECTING_SEARCH_RESULT,
@@ -108,9 +162,39 @@ public final class PetalAccessibilityService extends AccessibilityService {
     private enum AutomationMode {
         NONE,
         PLANTING,
+        FEED,
         POSTCARD,
         DISPATCH,
         RETURN_REWARD
+    }
+
+    private enum FeedStep {
+        WAITING_GAME_READY,
+        OPENING_NECTAR,
+        OPENING_NECTAR_SEARCH,
+        CLEARING_NECTAR_SEARCH,
+        ENTERING_NECTAR_SEARCH,
+        CONFIRMING_NECTAR_SEARCH,
+        CLOSING_NECTAR_KEYBOARD,
+        SELECTING_NECTAR,
+        WAITING_NECTAR_PANEL_CLOSE,
+        ZOOMING_OUT,
+        READING_NECTAR_COUNT,
+        READING_CONSUMED_COUNT,
+        FEEDING,
+        COLLECTING,
+        SWITCHING
+    }
+
+    private enum FeedSearchResetPhase {
+        NONE,
+        CLOSING
+    }
+
+    private enum FeedCollectPhase {
+        LOCATING_BLOOM,
+        SPIRALING,
+        RECEIVING_SPIRAL_RECEIPTS
     }
 
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -127,6 +211,11 @@ public final class PetalAccessibilityService extends AccessibilityService {
     private OverlayRunStatus plantingNoticeStatus;
     private SettingsStore settings;
     private OcrScanner scanner;
+    private NectarTemplateMatcher nectarTemplateMatcher;
+    private final OcrScanner.TransactionRegistry ocrTransactions =
+            new OcrScanner.TransactionRegistry();
+    private ActiveOcrTransaction activeOcrTransaction;
+    private int consecutiveOcrEngineFailures;
     private final SwitchGuard switchGuard = new SwitchGuard();
     private final PostcardAutomation postcardAutomation = new PostcardAutomation();
     private final PostcardReturnGuard postcardReturnGuard = new PostcardReturnGuard();
@@ -141,8 +230,8 @@ public final class PetalAccessibilityService extends AccessibilityService {
             new ObservationStability(2, 2, 0.08f, 0.07f);
     private int postcardPetalSearchMissingFrames;
     private int postcardPetalInputAttempts;
-    private int postcardKeyboardCloseAttempts;
-    private int postcardKeyboardAbsentFrames;
+    private final SearchKeyboardGuard postcardSearchKeyboardGuard =
+            new SearchKeyboardGuard(MAX_ACTION_ATTEMPTS);
     private final ObservationStability plantingPotStability =
             new ObservationStability(2, 2, 0.08f, 0.07f);
     private final ObservationStability plantingEntryStability =
@@ -151,12 +240,18 @@ public final class PetalAccessibilityService extends AccessibilityService {
             new ObservationStability(2, 0, 0.01f, 0.01f);
     private final ObservationStability plantingActiveStability =
             new ObservationStability(2, 1, 0.01f, 0.01f);
+    private final ObservationStability feedReadyStability =
+            new ObservationStability(2, 1, 0f, 0f);
     private int plantingSearchMissingFrames;
     private int plantingMonitorMissingFrames;
     private int plantingSearchInputAttempts;
-    private int plantingKeyboardCloseAttempts;
-    private int plantingKeyboardAbsentFrames;
+    private final SearchKeyboardGuard plantingSearchKeyboardGuard =
+            new SearchKeyboardGuard(MAX_ACTION_ATTEMPTS);
     private int plantingSearchMinimumCount;
+    private final PlantingSearchCloseGuard plantingSearchCloseGuard =
+            new PlantingSearchCloseGuard(12);
+    private boolean plantingSkippedLast;
+    private final java.util.Set<String> plantingSkippedFlowers = new java.util.HashSet<>();
     private int postcardPikminCountConfirmations;
     private int postcardLastPikminCount = -1;
     private ExpeditionDispatchSession expeditionDispatchSession;
@@ -170,17 +265,25 @@ public final class PetalAccessibilityService extends AccessibilityService {
     private boolean dispatchSearchTextConfirmed;
     private int dispatchSearchOpenAttempts;
     private int dispatchSearchInputAttempts;
-    private int dispatchKeyboardCloseAttempts;
-    private int dispatchKeyboardAbsentFrames;
+    private final SearchKeyboardGuard dispatchSearchKeyboardGuard =
+            new SearchKeyboardGuard(MAX_ACTION_ATTEMPTS);
     private int dispatchPikminTapIndex;
     private int dispatchAutoTapAttempts;
     private int dispatchAutoResultMissingFrames;
-    private int dispatchAutoControlMissingFrames;
+    private int dispatchAutoAnchorMissingFrames;
     private int dispatchUnknownFrames;
     private final ReturnRewardScanGuard returnRewardScanGuard = new ReturnRewardScanGuard();
+    private final ReturnRewardRoi returnRewardRoi = new ReturnRewardRoi();
+    private final Runnable returnRewardAnchorGuardTask = this::guardReturnRewardAnchor;
+    private View returnRewardAnchorOverlay;
+    private View returnRewardRoiOverlay;
+    private boolean returnRewardRoiHiddenForCapture;
     private long returnRewardStartedAt;
     private long returnRewardLastTapAt;
     private boolean returnRewardReceivePostcard = true;
+    private boolean returnRewardContinueOnNectarWarning;
+    private int returnRewardNectarWarningFrames;
+    private boolean returnRewardNectarWarningActive;
     private PostcardMatcher.Target returnRewardPostcardTarget;
     private int returnRewardPostcardConfirmations;
     private int returnRewardPostcardAttempts;
@@ -192,16 +295,108 @@ public final class PetalAccessibilityService extends AccessibilityService {
     private int actionAttempts;
     private int stopMissingConfirmations;
     private int plantingTransitionFrames;
-    private boolean plantingStartTapped;
+    private boolean initialPlantingMenuConfirmed;
     private boolean startAfterSelection;
     private boolean selectionFromSearch;
     private int targetSelectionX;
     private int targetSelectionY;
     private long captureSequence;
+    private final ScreenshotRequestQueue<ScreenshotRequest> screenshotRequests =
+            new ScreenshotRequestQueue<>();
+    private final Runnable screenshotTimeoutTask = this::screenshotTimedOut;
     private final ThreadLocal<CaptureGeometry> handlingCaptureGeometry = new ThreadLocal<>();
     private long runGeneration;
     private String recentPackage = "";
     private long recentPackageAt;
+    private FeedSettingsInput feedSettings = new FeedSettingsInput(6, 0, 40, 1200);
+    private FeedStep feedStep = FeedStep.WAITING_GAME_READY;
+    private String feedTargetFlower = "";
+    private int feedRound;
+    private int feedAttemptCount;
+    private int feedSquadSwitchCount;
+    private int feedTargetMissingFrames;
+    private int feedReadyMissingFrames;
+    private int feedNectarOpenAttempts;
+    private int feedSearchMissingFrames;
+    private int feedSearchActionAttempts;
+    private int feedSearchInputAttempts;
+    private int feedSearchOpenConfirmationFrames;
+    private int feedSearchTextConfirmationFrames;
+    private FeedSearchResetPhase feedSearchResetPhase = FeedSearchResetPhase.NONE;
+    private final SearchKeyboardGuard feedSearchKeyboardGuard =
+            new SearchKeyboardGuard(MAX_ACTION_ATTEMPTS);
+    private FeedScreenAnalyzer.NectarSelection feedNectarCandidate;
+    private int feedNectarCandidateFrames;
+    private int feedNectarTapAttempts;
+    private int feedPanelCloseWaitFrames;
+    private int feedPanelClosedConfirmationFrames;
+    private int feedDetailCloseAttempts;
+    private int feedNectarBeforeRound = -1;
+    private boolean feedCollectAfterCount;
+    private long feedNoEffectStartedAt;
+    private boolean feedZoomReady;
+    private int feedCollectedPetals;
+    private boolean feedCollectReturningFromDetail;
+    private boolean feedCollectReturningFromShare;
+    private int feedCollectReturnFrames;
+    private FeedCollectPhase feedCollectPhase = FeedCollectPhase.LOCATING_BLOOM;
+    private FeedScreenAnalyzer.VisualSignature feedBloomBaseline;
+    private FeedScreenAnalyzer.BloomTarget feedBloomCandidate;
+    private int feedBloomCandidateFrames;
+    private int feedBloomMissingFrames;
+    private long feedHarvestReceiptWindowStartedAt;
+    private long feedHarvestLastReceiptAt;
+    private int feedSpiralGestureGain;
+    private Integer feedHarvestPreviousReceiptGain;
+    private boolean feedHarvestReceiptVisible;
+    private GestureDescription.StrokeDescription feedHoldStroke;
+    private float feedHoldX;
+    private float feedHoldY;
+    private float feedHoldDirection;
+    private long feedHoldStartedAt;
+    private Integer feedHoldLastCount;
+    private int feedHoldStableReads;
+    private boolean feedHoldReleasing;
+    private Runnable feedHoldCompleted;
+    private Runnable feedHoldFailed;
+
+    private interface OcrFrameConsumer {
+        void accept(OcrScan.Frame frame);
+    }
+
+    private interface OcrFailureConsumer {
+        void accept(Exception error);
+    }
+
+    private final class ActiveOcrTransaction {
+        final OcrScanner.Transaction transaction;
+        final String diagnosticSource;
+        final OcrScan.Profile profile;
+        final CaptureGeometry geometry;
+        final OcrFrameConsumer success;
+        final OcrFailureConsumer failure;
+        final Runnable sourceCleanup;
+        final Runnable watchdog;
+
+        ActiveOcrTransaction(
+                OcrScanner.Transaction transaction,
+                String diagnosticSource,
+                OcrScan.Profile profile,
+                CaptureGeometry geometry,
+                OcrFrameConsumer success,
+                OcrFailureConsumer failure,
+                Runnable sourceCleanup) {
+            this.transaction = transaction;
+            this.diagnosticSource = diagnosticSource;
+            this.profile = profile;
+            this.geometry = geometry;
+            this.success = success;
+            this.failure = failure;
+            this.sourceCleanup = sourceCleanup;
+            watchdog = () -> ocrTimedOut(this);
+        }
+    }
+
     /** 服務啟動後初始化 OCR、偏好設定與可拖曳懸浮窗。 */
     @Override
     protected void onServiceConnected() {
@@ -209,6 +404,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
         connectedService = new WeakReference<>(this);
         settings = new SettingsStore(this);
         scanner = new OcrScanner();
+        nectarTemplateMatcher = new NectarTemplateMatcher(this);
         if (showOverlay()) {
             overlay.setVisibility(settings.overlayVisible() ? View.VISIBLE : View.GONE);
         }
@@ -242,6 +438,8 @@ public final class PetalAccessibilityService extends AccessibilityService {
         }
         safeRemoveOverlayView(settingsOverlay, "settings");
         safeRemoveOverlayView(noticeOverlay, "notice");
+        safeRemoveOverlayView(returnRewardAnchorOverlay, "return-reward-anchor");
+        safeRemoveOverlayView(returnRewardRoiOverlay, "return-reward-roi");
         safeRemoveOverlayView(overlay, "icon");
         overlay = null;
         settingsOverlay = null;
@@ -310,6 +508,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
         targetFlower = "";
         targetCount = 0;
         actionAttempts = 0;
+        initialPlantingMenuConfirmed = false;
         startAfterSelection = false;
         selectionFromSearch = false;
         targetSelectionX = 0;
@@ -331,6 +530,67 @@ public final class PetalAccessibilityService extends AccessibilityService {
                 getString(R.string.overlay_planting_checking),
                 getString(R.string.overlay_ocr_detail));
         schedule(200);
+    }
+
+    /** 啟動花瓣生產；先處理目前隊伍，三擊哨子只計入後續換隊次數。 */
+    private void startFeedAutomation(FeedSettingsInput input) {
+        List<String> sequence = settings.allowedFlowers();
+        if (sequence.isEmpty()) {
+            setStatus(getString(R.string.status_need_flowers));
+            return;
+        }
+        runGeneration++;
+        running = true;
+        busy = false;
+        automationMode = AutomationMode.FEED;
+        feedSettings = input;
+        feedStep = FeedStep.WAITING_GAME_READY;
+        feedTargetFlower = sequence.get(0);
+        feedRound = 0;
+        feedAttemptCount = 0;
+        feedSquadSwitchCount = 0;
+        feedTargetMissingFrames = 0;
+        feedReadyMissingFrames = 0;
+        feedNectarOpenAttempts = 0;
+        feedSearchMissingFrames = 0;
+        feedReadyStability.reset();
+        feedSearchActionAttempts = 0;
+        feedSearchInputAttempts = 0;
+        feedSearchOpenConfirmationFrames = 0;
+        feedSearchTextConfirmationFrames = 0;
+        feedSearchResetPhase = FeedSearchResetPhase.NONE;
+        feedSearchKeyboardGuard.reset();
+        feedNectarCandidate = null;
+        feedNectarCandidateFrames = 0;
+        feedNectarTapAttempts = 0;
+        feedPanelCloseWaitFrames = 0;
+        feedPanelClosedConfirmationFrames = 0;
+        feedDetailCloseAttempts = 0;
+        feedNectarBeforeRound = -1;
+        feedCollectAfterCount = false;
+        feedNoEffectStartedAt = 0L;
+        feedZoomReady = false;
+        feedCollectedPetals = 0;
+        feedCollectReturningFromDetail = false;
+        feedCollectReturningFromShare = false;
+        feedCollectReturnFrames = 0;
+        resetFeedSpiralState();
+        resetFeedHoldState();
+        if (overlay != null) {
+            overlay.setVisibility(View.VISIBLE);
+            overlay.setContentDescription(getString(
+                    R.string.overlay_status_accessibility,
+                    getString(R.string.overlay_stop_description),
+                    getString(R.string.overlay_icon_move_hint)));
+        }
+        setStatus(getString(R.string.status_feed_started));
+        setRunStatus(
+                AutomationMode.FEED,
+                OverlayRunStatus.Kind.RECOGNIZING,
+                getString(R.string.status_feed_started),
+                getString(R.string.overlay_feed_progress, 0, input.feedsPerSquad(), 0,
+                        input.maxSquadSwitches()));
+        schedule(200L);
     }
 
     /** 啟動獨立的明信片 OCR 狀態機，與種花流程互斥。 */
@@ -396,12 +656,11 @@ public final class PetalAccessibilityService extends AccessibilityService {
         dispatchSearchTextConfirmed = false;
         dispatchSearchOpenAttempts = 0;
         dispatchSearchInputAttempts = 0;
-        dispatchKeyboardCloseAttempts = 0;
-        dispatchKeyboardAbsentFrames = 0;
+        dispatchSearchKeyboardGuard.reset();
         dispatchPikminTapIndex = 0;
         dispatchAutoTapAttempts = 0;
         dispatchAutoResultMissingFrames = 0;
-        dispatchAutoControlMissingFrames = 0;
+        dispatchAutoAnchorMissingFrames = 0;
         dispatchUnknownFrames = 0;
         if (overlay != null) {
             overlay.setVisibility(View.VISIBLE);
@@ -420,8 +679,10 @@ public final class PetalAccessibilityService extends AccessibilityService {
     }
 
     /** 啟動獨立的回程收取循環；不增加或扣除現有派遣次數。 */
-    private void startReturnRewardCollection(boolean receivePostcard) {
-        if (activeGameBoundsStrict() == null) {
+    private void startReturnRewardCollection(
+            boolean receivePostcard, boolean continueOnNectarWarning) {
+        Rect gameBounds = activeGameBoundsStrict();
+        if (gameBounds == null) {
             showFloatingNotice(getString(R.string.status_return_reward_left_game));
             return;
         }
@@ -430,9 +691,14 @@ public final class PetalAccessibilityService extends AccessibilityService {
         busy = false;
         automationMode = AutomationMode.RETURN_REWARD;
         returnRewardScanGuard.reset();
-        returnRewardStartedAt = android.os.SystemClock.elapsedRealtime();
+        clearReturnRewardRoiOverlays();
+        returnRewardRoi.reset();
+        returnRewardStartedAt = 0L;
         returnRewardLastTapAt = 0L;
         returnRewardReceivePostcard = receivePostcard;
+        returnRewardContinueOnNectarWarning = continueOnNectarWarning;
+        returnRewardNectarWarningFrames = 0;
+        returnRewardNectarWarningActive = false;
         resetReturnRewardPostcard();
         if (overlay != null) {
             overlay.setVisibility(View.VISIBLE);
@@ -441,13 +707,141 @@ public final class PetalAccessibilityService extends AccessibilityService {
                     getString(R.string.overlay_stop_description),
                     getString(R.string.overlay_icon_move_hint)));
         }
-        setStatus(getString(R.string.status_return_reward_started));
+        setStatus(getString(R.string.status_return_reward_select_roi));
         setRunStatus(
                 AutomationMode.RETURN_REWARD,
                 OverlayRunStatus.Kind.RECOGNIZING,
-                getString(R.string.status_return_reward_started),
+                getString(R.string.status_return_reward_select_roi),
+                getString(R.string.overlay_return_reward_safety));
+        showReturnRewardAnchorOverlay(captureBounds(gameBounds));
+    }
+
+    /** Blocks reward scanning until the user's first post-start tap defines the ROI. */
+    private void showReturnRewardAnchorOverlay(CaptureGeometry.Bounds gameBounds) {
+        if (windowManager == null) {
+            stopWithError(getString(R.string.status_return_reward_roi_failed));
+            return;
+        }
+        View capture = new View(this);
+        capture.setBackgroundColor(Color.TRANSPARENT);
+        capture.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        capture.setOnTouchListener(new ReturnRewardAnchorTouchListener());
+        WindowManager.LayoutParams params = new WindowManager.LayoutParams(
+                gameBounds.width(),
+                gameBounds.height(),
+                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                        | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
+                        | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                android.graphics.PixelFormat.TRANSLUCENT);
+        params.gravity = Gravity.TOP | Gravity.START;
+        params.x = gameBounds.left();
+        params.y = gameBounds.top();
+        if (!safeAddOverlayView(capture, params, "return-reward-anchor")) {
+            stopWithError(getString(R.string.status_return_reward_roi_failed));
+            return;
+        }
+        returnRewardAnchorOverlay = capture;
+        handler.postDelayed(returnRewardAnchorGuardTask, 500L);
+    }
+
+    private void guardReturnRewardAnchor() {
+        if (!running
+                || automationMode != AutomationMode.RETURN_REWARD
+                || returnRewardRoi.isArmed()) {
+            return;
+        }
+        if (activeGameBoundsStrict() == null || !isGameForeground()) {
+            stopWithError(getString(R.string.status_return_reward_left_game));
+            return;
+        }
+        handler.postDelayed(returnRewardAnchorGuardTask, 500L);
+    }
+
+    private void armReturnRewardRoi(int screenX, int screenY) {
+        if (!running
+                || automationMode != AutomationMode.RETURN_REWARD
+                || returnRewardRoi.isArmed()) {
+            return;
+        }
+        Rect activeBounds = activeGameBoundsStrict();
+        if (activeBounds == null
+                || !returnRewardRoi.armFromScreenTap(
+                        screenX, screenY, captureBounds(activeBounds))) {
+            return;
+        }
+        handler.removeCallbacks(returnRewardAnchorGuardTask);
+        safeRemoveOverlayView(returnRewardAnchorOverlay, "return-reward-anchor");
+        returnRewardAnchorOverlay = null;
+        showReturnRewardRoiOverlay();
+        if (returnRewardRoiOverlay == null) {
+            return;
+        }
+        returnRewardStartedAt = android.os.SystemClock.elapsedRealtime();
+        returnRewardLastTapAt = 0L;
+        returnRewardScanGuard.reset();
+        setStatus(getString(R.string.status_return_reward_roi_selected));
+        setRunStatus(
+                AutomationMode.RETURN_REWARD,
+                OverlayRunStatus.Kind.RECOGNIZING,
+                getString(R.string.status_return_reward_roi_selected),
                 getString(R.string.overlay_return_reward_safety));
         schedule(RETURN_REWARD_SCAN_DELAY_MILLIS);
+    }
+
+    private void showReturnRewardRoiOverlay() {
+        CaptureGeometry.Bounds bounds = returnRewardRoi.screenBounds();
+        if (bounds == null || windowManager == null) {
+            stopWithError(getString(R.string.status_return_reward_roi_failed));
+            return;
+        }
+        ReturnRewardRoiView frame = new ReturnRewardRoiView();
+        frame.setContentDescription(getString(R.string.status_return_reward_roi_selected));
+        WindowManager.LayoutParams params = new WindowManager.LayoutParams(
+                bounds.width(),
+                bounds.height(),
+                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                        | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                        | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                android.graphics.PixelFormat.TRANSLUCENT);
+        params.gravity = Gravity.TOP | Gravity.START;
+        params.x = bounds.left();
+        params.y = bounds.top();
+        if (!safeAddOverlayView(frame, params, "return-reward-roi")) {
+            stopWithError(getString(R.string.status_return_reward_roi_failed));
+            return;
+        }
+        returnRewardRoiOverlay = frame;
+    }
+
+    private void hideReturnRewardRoiForCapture() {
+        if (returnRewardRoiOverlay != null
+                && returnRewardRoiOverlay.getVisibility() == View.VISIBLE) {
+            returnRewardRoiOverlay.setVisibility(View.INVISIBLE);
+            returnRewardRoiHiddenForCapture = true;
+        }
+    }
+
+    private void restoreReturnRewardRoiAfterCapture() {
+        if (!returnRewardRoiHiddenForCapture) {
+            return;
+        }
+        returnRewardRoiHiddenForCapture = false;
+        if (running
+                && automationMode == AutomationMode.RETURN_REWARD
+                && returnRewardRoiOverlay != null) {
+            returnRewardRoiOverlay.setVisibility(View.VISIBLE);
+        }
+    }
+
+    private void clearReturnRewardRoiOverlays() {
+        handler.removeCallbacks(returnRewardAnchorGuardTask);
+        safeRemoveOverlayView(returnRewardAnchorOverlay, "return-reward-anchor");
+        safeRemoveOverlayView(returnRewardRoiOverlay, "return-reward-roi");
+        returnRewardAnchorOverlay = null;
+        returnRewardRoiOverlay = null;
+        returnRewardRoiHiddenForCapture = false;
     }
 
     /** 排程回呼：只在遊戲前景且沒有其他掃描時擷取畫面。 */
@@ -455,12 +849,30 @@ public final class PetalAccessibilityService extends AccessibilityService {
         if (!running || busy) {
             return;
         }
-        if ((automationMode == AutomationMode.DISPATCH
+        if (automationMode == AutomationMode.RETURN_REWARD && !returnRewardRoi.isArmed()) {
+            return;
+        }
+        Rect strictBounds = activeGameBoundsStrict();
+        if ((automationMode == AutomationMode.FEED
+                || automationMode == AutomationMode.DISPATCH
                 || automationMode == AutomationMode.RETURN_REWARD)
-                && activeGameBoundsStrict() == null) {
-            stopWithError(getString(automationMode == AutomationMode.RETURN_REWARD
+                && strictBounds == null) {
+            if (automationMode == AutomationMode.FEED
+                    && feedStep == FeedStep.WAITING_GAME_READY
+                    && ++feedReadyMissingFrames < FEED_MAX_TARGET_MISSING_FRAMES) {
+                statusFeed(getString(
+                        R.string.status_feed_waiting_ready,
+                        feedReadyMissingFrames,
+                        FEED_MAX_TARGET_MISSING_FRAMES));
+                schedule(FEED_OCR_RETRY_MILLIS);
+                return;
+            }
+            int message = automationMode == AutomationMode.RETURN_REWARD
                     ? R.string.status_return_reward_left_game
-                    : R.string.status_reward_left_game));
+                    : automationMode == AutomationMode.FEED
+                            ? R.string.status_feed_wrong_page
+                            : R.string.status_reward_left_game;
+            stopWithError(getString(message));
             return;
         }
         if (!isGameForeground()) {
@@ -474,10 +886,24 @@ public final class PetalAccessibilityService extends AccessibilityService {
             return;
         }
         busy = true;
+        if (automationMode == AutomationMode.RETURN_REWARD) {
+            hideReturnRewardRoiForCapture();
+            long generation = runGeneration;
+            handler.postDelayed(() -> {
+                if (!isActiveRun(generation)
+                        || automationMode != AutomationMode.RETURN_REWARD) {
+                    busy = false;
+                    restoreReturnRewardRoiAfterCapture();
+                    return;
+                }
+                takeGameScreenshot(generation);
+            }, RETURN_REWARD_FRAME_HIDE_DELAY_MILLIS);
+            return;
+        }
         takeGameScreenshot(runGeneration);
     }
 
-    /** 依 Android 版本選擇視窗截圖或全螢幕截圖。 */
+    /** 建立截圖要求；所有流程皆由同一個序列化管線送出。 */
     private void takeGameScreenshot(long generation) {
         AccessibilityNodeInfo root = getRootInActiveWindow();
         long sequence = ++captureSequence;
@@ -496,13 +922,11 @@ public final class PetalAccessibilityService extends AccessibilityService {
         }
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE
                 && gameWindowAvailable) {
-            takeScreenshotOfWindow(
-                    root.getWindowId(),
-                    getMainExecutor(),
-                    screenshotCallback(
-                            List.of(), generation, CaptureGeometry.Mode.WINDOW,
-                            captureBounds(gameBounds), captureBounds(gameBounds),
-                            Display.DEFAULT_DISPLAY, sequence));
+            screenshotRequests.enqueue(new ScreenshotRequest(
+                    List.of(), generation, CaptureGeometry.Mode.WINDOW,
+                    captureBounds(gameBounds), captureBounds(gameBounds),
+                    Display.DEFAULT_DISPLAY, root.getWindowId(), sequence));
+            dispatchNextScreenshot();
             return;
         }
 
@@ -510,37 +934,80 @@ public final class PetalAccessibilityService extends AccessibilityService {
         // visible overlays stable, then remove their pixels from the copy used
         // by OCR so the user never sees a hide/show cycle.
         List<ScreenshotOverlayMask.Region> overlayRegions = captureVisibleOverlayRegions();
-        takeScreenshot(
+        screenshotRequests.enqueue(new ScreenshotRequest(
+                overlayRegions,
+                generation,
+                CaptureGeometry.Mode.DISPLAY,
+                new CaptureGeometry.Bounds(
+                        0,
+                        0,
+                        getResources().getDisplayMetrics().widthPixels,
+                        getResources().getDisplayMetrics().heightPixels),
+                gameBounds == null ? null : captureBounds(gameBounds),
                 Display.DEFAULT_DISPLAY,
-                getMainExecutor(),
-                screenshotCallback(
-                        overlayRegions,
-                        generation,
-                        CaptureGeometry.Mode.DISPLAY,
-                        new CaptureGeometry.Bounds(
-                                0,
-                                0,
-                                getResources().getDisplayMetrics().widthPixels,
-                                getResources().getDisplayMetrics().heightPixels),
-                        gameBounds == null ? null : captureBounds(gameBounds),
-                        Display.DEFAULT_DISPLAY,
-                        sequence));
+                -1,
+                sequence));
+        dispatchNextScreenshot();
+    }
+
+    private void dispatchNextScreenshot() {
+        ScreenshotRequestQueue.Entry<ScreenshotRequest> entry = screenshotRequests.startNext();
+        if (entry == null) {
+            return;
+        }
+        handler.removeCallbacks(screenshotTimeoutTask);
+        handler.postDelayed(screenshotTimeoutTask, SCREENSHOT_CALLBACK_TIMEOUT_MILLIS);
+        ScreenshotRequest request = entry.request();
+        TakeScreenshotCallback callback = screenshotCallback(entry.id(), request);
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE
+                && request.captureMode() == CaptureGeometry.Mode.WINDOW) {
+            takeScreenshotOfWindow(request.windowId(), getMainExecutor(), callback);
+        } else {
+            takeScreenshot(request.displayId(), getMainExecutor(), callback);
+        }
+    }
+
+    private boolean completeScreenshotRequest(long requestId) {
+        if (!screenshotRequests.finish(requestId)) {
+            return false;
+        }
+        handler.removeCallbacks(screenshotTimeoutTask);
+        return true;
+    }
+
+    private void screenshotTimedOut() {
+        ScreenshotRequestQueue.Entry<ScreenshotRequest> active = screenshotRequests.active();
+        if (active == null || !screenshotRequests.finish(active.id())) {
+            return;
+        }
+        restoreReturnRewardRoiAfterCapture();
+        scanFailed(getString(R.string.status_capture_failed, -1), active.request().generation());
+    }
+
+    private void clearScreenshotPipeline() {
+        handler.removeCallbacks(screenshotTimeoutTask);
+        screenshotRequests.clear();
+        restoreReturnRewardRoiAfterCapture();
     }
 
     /** 建立截圖回呼，統一處理 bitmap、OCR 與失敗重試。 */
     private TakeScreenshotCallback screenshotCallback(
-            List<ScreenshotOverlayMask.Region> overlayRegions,
-            long generation,
-            CaptureGeometry.Mode captureMode,
-            CaptureGeometry.Bounds expectedSourceBoundsOnScreen,
-            CaptureGeometry.Bounds targetWindowBoundsOnScreen,
-            int displayId,
-            long sequence) {
+            long requestId, ScreenshotRequest request) {
+        long generation = request.generation();
         return new TakeScreenshotCallback() {
             @Override
             public void onSuccess(ScreenshotResult result) {
-                Bitmap bitmap = copyBitmap(result);
-                if (!isActiveRun(generation)) {
+                restoreReturnRewardRoiAfterCapture();
+                Bitmap bitmap;
+                try {
+                    bitmap = copyBitmap(result);
+                } catch (RuntimeException error) {
+                    if (completeScreenshotRequest(requestId)) {
+                        scanFailed(getString(R.string.status_copy_failed), generation);
+                    }
+                    return;
+                }
+                if (!completeScreenshotRequest(requestId) || !isActiveRun(generation)) {
                     if (bitmap != null) {
                         bitmap.recycle();
                     }
@@ -551,15 +1018,15 @@ public final class PetalAccessibilityService extends AccessibilityService {
                     return;
                 }
                 CaptureGeometry captureGeometry = new CaptureGeometry(
-                        captureMode,
+                        request.captureMode(),
                         bitmap.getWidth(),
                         bitmap.getHeight(),
-                        expectedSourceBoundsOnScreen,
-                        targetWindowBoundsOnScreen,
-                        displayId,
-                        sequence,
+                        request.expectedSourceBoundsOnScreen(),
+                        request.targetWindowBoundsOnScreen(),
+                        request.displayId(),
+                        request.sequence(),
                         result.getTimestamp());
-                maskOverlayRegions(bitmap, overlayRegions);
+                maskOverlayRegions(bitmap, request.overlayRegions());
                 // 鍵盤會遮住花盆清單並令整頁 OCR 變成 UNKNOWN。這個狀態只依系統視窗
                 // 判斷，因此必須在 OCR 前執行，確保任何鍵盤語言或版面都能離開。
                 if (automationMode == AutomationMode.POSTCARD
@@ -567,7 +1034,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
                                 == PostcardAutomation.Step.CLOSE_PETAL_KEYBOARD) {
                     busy = false;
                     try {
-                        closePostcardKeyboard();
+                        closePostcardKeyboard(bitmap);
                     } finally {
                         bitmap.recycle();
                     }
@@ -577,47 +1044,45 @@ public final class PetalAccessibilityService extends AccessibilityService {
                         && automationStep == AutomationStep.CLOSING_SEARCH_KEYBOARD) {
                     busy = false;
                     try {
-                        closePlantingSearchKeyboard();
+                        closePlantingSearchKeyboard(bitmap);
+                    } finally {
+                        bitmap.recycle();
+                    }
+                    return;
+                }
+                if (automationMode == AutomationMode.FEED
+                        && feedStep == FeedStep.CLOSING_NECTAR_KEYBOARD) {
+                    busy = false;
+                    try {
+                        closeFeedSearchKeyboard(bitmap);
                     } finally {
                         bitmap.recycle();
                     }
                     return;
                 }
                 OcrScan.Profile profile = ocrProfileForCurrentStep();
-                OcrScanner.FrameCallback ocrCallback = new OcrScanner.FrameCallback() {
-                    @Override
-                    public void onSuccess(OcrScan.Frame frame) {
-                        if (!isActiveRun(generation)) {
-                            bitmap.recycle();
-                            return;
-                        }
-                        busy = false;
-                        try {
-                            // 地圖探測會由 OCR 回呼同步使用這張截圖；不可在 Scanner 端提早釋放。
-                            runWithCaptureGeometry(
-                                    frame.captureGeometry(), () -> handleTokens(frame, bitmap));
-                        } finally {
-                            bitmap.recycle();
-                        }
-                    }
-
-                    @Override
-                    public void onFailure(Exception error) {
-                        try {
-                            if (isActiveRun(generation)) {
-                            }
+                startOcrTransaction(
+                        bitmap,
+                        profile,
+                        captureGeometry,
+                        "full",
+                        true,
+                        frame -> {
+                        recordOcrDiagnostic("full", frame);
+                        // Focused OCR copies this bitmap synchronously before this callback returns.
+                        runWithCaptureGeometry(
+                                frame.captureGeometry(), () -> handleTokens(frame, bitmap));
+                        },
+                        error -> {
+                            recordOcrDiagnosticFailure("full", profile, captureGeometry, error);
                             scanFailed(getString(R.string.status_ocr_failed), generation);
-                        } finally {
-                            bitmap.recycle();
-                        }
-                    }
-                };
-                scanner.scan(bitmap, profile, captureGeometry, getMainExecutor(), ocrCallback);
+                        });
             }
 
             @Override
             public void onFailure(int errorCode) {
-                if (!isActiveRun(generation)) {
+                restoreReturnRewardRoiAfterCapture();
+                if (!completeScreenshotRequest(requestId) || !isActiveRun(generation)) {
                     return;
                 }
                 scanFailed(getString(R.string.status_capture_failed, errorCode), generation);
@@ -627,6 +1092,9 @@ public final class PetalAccessibilityService extends AccessibilityService {
 
     /** 花盆搜尋與接收頁只需中文 UI，避免等待五個文字系統模型全部完成。 */
     private OcrScan.Profile ocrProfileForCurrentStep() {
+        if (automationMode == AutomationMode.FEED) {
+            return OcrScan.Profile.FULL_CHINESE;
+        }
         if (automationMode == AutomationMode.RETURN_REWARD) {
             return OcrScan.Profile.FULL_CHINESE;
         }
@@ -635,11 +1103,18 @@ public final class PetalAccessibilityService extends AccessibilityService {
         }
         if (automationMode == AutomationMode.PLANTING) {
             boolean chineseOnly = automationStep == AutomationStep.REVEALING_SEARCH_PANEL
+                    || automationStep == AutomationStep.CHECKING_PLANTING_ENTRY
+                    || automationStep == AutomationStep.WAITING_INITIAL_PLANTING_MENU
+                    || automationStep == AutomationStep.WAITING_MENU_AFTER_START
                     || automationStep == AutomationStep.OPENING_SEARCH
+                    || automationStep == AutomationStep.CLEARING_SEARCH
                     || automationStep == AutomationStep.ENTERING_SEARCH
                     || automationStep == AutomationStep.CLOSING_SEARCH_KEYBOARD
                     || automationStep == AutomationStep.SELECTING_SEARCH_RESULT
                     || automationStep == AutomationStep.CLOSING_SEARCH_AFTER_SELECTION;
+            if (automationStep == AutomationStep.SELECTING_SEARCH_RESULT) {
+                return OcrScan.Profile.PLANTING_SEARCH_RESULTS;
+            }
             return chineseOnly
                     ? OcrScan.Profile.FULL_CHINESE
                     : OcrScan.Profile.FULL_MULTILINGUAL;
@@ -662,6 +1137,20 @@ public final class PetalAccessibilityService extends AccessibilityService {
                 ? OcrScan.Profile.FULL_CHINESE
                 : OcrScan.Profile.FULL_MULTILINGUAL;
     }
+
+    private void recordOcrDiagnostic(String source, OcrScan.Frame frame) {
+    }
+
+    private void recordOcrDiagnosticFailure(
+            String source,
+            OcrScan.Profile profile,
+            CaptureGeometry captureGeometry,
+            Exception error) {
+        if (isPlantingEntryStep()) {
+            logPlantingEntryFailure(profile, error);
+        }
+    }
+
 
     private static CaptureGeometry.Bounds captureBounds(Rect bounds) {
         return new CaptureGeometry.Bounds(bounds.left, bounds.top, bounds.right, bounds.bottom);
@@ -754,6 +1243,10 @@ public final class PetalAccessibilityService extends AccessibilityService {
     /** 執行一次 OCR 結果狀態機，依序選花、確認並開始種花。 */
     private void handleTokens(OcrScan.Frame frame, Bitmap bitmap) {
         List<PetalMatcher.Token> tokens = frame.tokens();
+        if (automationMode == AutomationMode.FEED) {
+            handleFeedTokens(tokens, bitmap);
+            return;
+        }
         if (automationMode == AutomationMode.RETURN_REWARD) {
             handleReturnRewardTokens(tokens, bitmap);
             return;
@@ -779,6 +1272,9 @@ public final class PetalAccessibilityService extends AccessibilityService {
                 width,
                 height,
                 bitmap::getPixel);
+        if (isPlantingEntryStep()) {
+            logPlantingEntryFrame(frame, plantingScreen);
+        }
         PlantingControlEvidence plantingControls = collectPlantingControlEvidence(
                 tokens, width, height, plantingScreen);
 
@@ -816,6 +1312,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
             }
             case REVEALING_SEARCH_PANEL,
                     OPENING_SEARCH,
+                    CLEARING_SEARCH,
                     ENTERING_SEARCH,
                     CLOSING_SEARCH_KEYBOARD,
                     SELECTING_SEARCH_RESULT,
@@ -842,8 +1339,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
 
         // 每次開始都先搜尋第一順位；搜尋結果已連續確認名稱與數量，不再重讀全畫面。
         if (currentFlower.isEmpty()) {
-            // 搜尋後才以最新畫面的播放／停止鈕判斷是否已在種花。
-            beginPlantingFlowerSearch(firstFlower, 0, true);
+            returnToInitialPlantingEntry();
             return;
         }
 
@@ -898,6 +1394,10 @@ public final class PetalAccessibilityService extends AccessibilityService {
         long cooldown = switchGuard.cooldownRemainingMillis(now);
         int threshold = settings.threshold();
         boolean readyToSwitch = switchGuard.shouldSwitch(remaining, threshold, now);
+        if (readyToSwitch) {
+            targetCount = remaining;
+            logPlantingSwitch("low-count-confirmed", false);
+        }
 
         if (cooldown > 0) {
             setStatus(getString(
@@ -947,6 +1447,1295 @@ public final class PetalAccessibilityService extends AccessibilityService {
     }
 
     /** 花瓣生產：選精華、讀數量、餵食、確認發光、採花及三擊換隊。 */
+    private void handleFeedTokens(List<PetalMatcher.Token> tokens, Bitmap bitmap) {
+        switch (feedStep) {
+            case WAITING_GAME_READY -> waitForFeedGameReady(tokens, bitmap);
+            case OPENING_NECTAR -> {
+                if (FeedScreenAnalyzer.isNectarPanelOpen(
+                        bitmap.getWidth(), bitmap.getHeight(), bitmap::getPixel)) {
+                    ObservationStability.Result stability = feedReadyStability.observe(
+                            "nectar-panel",
+                            bitmap.getWidth() / 2,
+                            bitmap.getHeight() / 5,
+                            bitmap.getWidth(),
+                            bitmap.getHeight());
+                    statusFeed(getString(R.string.status_feed_confirming_panel_open));
+                    if (stability == ObservationStability.Result.STABLE) {
+                        feedReadyStability.reset();
+                        feedNectarOpenAttempts = 0;
+                        feedStep = FeedStep.OPENING_NECTAR_SEARCH;
+                        schedule(0L);
+                    } else {
+                        schedule(FEED_OCR_RETRY_MILLIS);
+                    }
+                    return;
+                }
+                feedReadyStability.reset();
+                if (feedNectarOpenAttempts >= MAX_ACTION_ATTEMPTS) {
+                    stopWithError(getString(R.string.status_feed_open_failed));
+                    return;
+                }
+                feedNectarOpenAttempts++;
+                statusFeed(getString(R.string.status_feed_opening_nectar));
+                dispatchTap(
+                        Math.round(bitmap.getWidth() * 0.52f),
+                        Math.round(bitmap.getHeight() * 0.90f),
+                        90L,
+                        () -> schedule(700L),
+                        () -> stopWithError(getString(R.string.status_feed_open_failed)));
+            }
+            case OPENING_NECTAR_SEARCH -> openFeedNectarSearch(bitmap);
+            case CLEARING_NECTAR_SEARCH -> clearFeedNectarSearch(bitmap);
+            case ENTERING_NECTAR_SEARCH -> enterFeedNectarSearch();
+            case CONFIRMING_NECTAR_SEARCH -> confirmFeedNectarSearch(bitmap);
+            case CLOSING_NECTAR_KEYBOARD -> closeFeedSearchKeyboard(bitmap);
+            case SELECTING_NECTAR -> {
+                String query = FeedScreenAnalyzer.nectarSearchQuery(feedTargetFlower);
+                if (!CardHighlight.isPetalSearchOpen(
+                        bitmap.getWidth(), bitmap.getHeight(), bitmap::getPixel)) {
+                    feedSearchOpenConfirmationFrames = 0;
+                    feedSearchTextConfirmationFrames = 0;
+                    feedNectarCandidate = null;
+                    feedNectarCandidateFrames = 0;
+                    feedStep = FeedStep.OPENING_NECTAR_SEARCH;
+                    schedule(FEED_OCR_RETRY_MILLIS);
+                    return;
+                }
+                if (!gameEditableTextMatches(query)) {
+                    feedNectarCandidate = null;
+                    feedNectarCandidateFrames = 0;
+                    feedStep = FeedStep.ENTERING_NECTAR_SEARCH;
+                    schedule(FEED_OCR_RETRY_MILLIS);
+                    return;
+                }
+                FeedScreenAnalyzer.NectarSearchAnalysis nectarAnalysis =
+                        FeedScreenAnalyzer.analyzeSearchedNectar(
+                                tokens,
+                                feedTargetFlower,
+                                bitmap.getWidth(),
+                                bitmap.getHeight());
+                FeedScreenAnalyzer.NectarSelection selection = nectarAnalysis.selection();
+                if (selection == null) {
+                    feedNectarCandidate = null;
+                    feedNectarCandidateFrames = 0;
+                    feedTargetMissingFrames++;
+                    recordFeedNectarSelectionDiagnostic(
+                            "missing",
+                            nectarAnalysis.reason(),
+                            feedTargetMissingFrames,
+                            0,
+                            feedTargetMissingFrames,
+                            nectarAnalysis.nectarCountFound(),
+                            nectarAnalysis.petalCountFound());
+                    statusFeed(getString(
+                            R.string.status_feed_searching_nectar,
+                            FeedScreenAnalyzer.nectarDisplayName(feedTargetFlower),
+                            feedTargetMissingFrames,
+                            FEED_MAX_TARGET_MISSING_FRAMES));
+                    if (feedTargetMissingFrames >= FEED_MAX_TARGET_MISSING_FRAMES) {
+                        stopWithError(getString(
+                                R.string.status_feed_nectar_missing,
+                                FeedScreenAnalyzer.nectarDisplayName(feedTargetFlower)));
+                    } else {
+                        schedule(FEED_OCR_RETRY_MILLIS);
+                    }
+                    return;
+                }
+                NectarTemplateMatcher.Evidence visualEvidence = nectarTemplateMatcher.match(
+                        bitmap,
+                        feedTargetFlower,
+                        selection.x(),
+                        selection.tapY());
+                Log.i(TAG, "FEED_NECTAR_TEMPLATE status=" + visualEvidence.status()
+                        + " expectedScore=" + visualEvidence.expectedScore()
+                        + " bestScore=" + visualEvidence.bestScore());
+                if (visualEvidence.status() == NectarTemplateMatcher.Status.CONFLICT) {
+                    feedNectarCandidate = null;
+                    feedNectarCandidateFrames = 0;
+                    feedTargetMissingFrames++;
+                    statusFeed(getString(
+                            R.string.status_feed_searching_nectar,
+                            selection.name(),
+                            feedTargetMissingFrames,
+                            FEED_MAX_TARGET_MISSING_FRAMES));
+                    if (feedTargetMissingFrames >= FEED_MAX_TARGET_MISSING_FRAMES) {
+                        stopWithError(getString(
+                                R.string.status_feed_nectar_missing, selection.name()));
+                    } else {
+                        schedule(FEED_OCR_RETRY_MILLIS);
+                    }
+                    return;
+                }
+                int requiredTargetFrames = NectarTemplateMatcher.requiredStableFrames(
+                        visualEvidence.status(), FEED_REQUIRED_NECTAR_TARGET_FRAMES);
+                String stabilityReason = FeedScreenAnalyzer.nectarSelectionStabilityReason(
+                        feedNectarCandidate,
+                        selection,
+                        bitmap.getWidth(),
+                        bitmap.getHeight());
+                if (!"stable".equals(stabilityReason)) {
+                    feedNectarCandidate = selection;
+                    feedNectarCandidateFrames = 1;
+                    feedTargetMissingFrames++;
+                    recordFeedNectarSelectionDiagnostic(
+                            "confirming",
+                            stabilityReason,
+                            feedTargetMissingFrames,
+                            feedNectarCandidateFrames,
+                            feedTargetMissingFrames,
+                            true,
+                            true);
+                    statusFeed(getString(
+                            R.string.status_feed_confirming_nectar_target,
+                            selection.name(),
+                            feedNectarCandidateFrames,
+                            requiredTargetFrames));
+                    if (feedTargetMissingFrames >= FEED_MAX_TARGET_MISSING_FRAMES) {
+                        stopWithError(getString(
+                                R.string.status_feed_nectar_missing, selection.name()));
+                    } else {
+                        schedule(FEED_OCR_RETRY_MILLIS);
+                    }
+                    return;
+                }
+                feedNectarCandidate = selection;
+                feedNectarCandidateFrames++;
+                recordFeedNectarSelectionDiagnostic(
+                        "confirmed",
+                        "stable",
+                        Math.max(1, feedTargetMissingFrames + 1),
+                        feedNectarCandidateFrames,
+                        feedTargetMissingFrames,
+                        true,
+                        true);
+                if (feedNectarCandidateFrames < requiredTargetFrames) {
+                    statusFeed(getString(
+                            R.string.status_feed_confirming_nectar_target,
+                            selection.name(),
+                            feedNectarCandidateFrames,
+                            requiredTargetFrames));
+                    schedule(FEED_OCR_RETRY_MILLIS);
+                    return;
+                }
+                selectFeedNectar(selection);
+            }
+            case WAITING_NECTAR_PANEL_CLOSE -> waitForFeedNectarPanelClose(tokens, bitmap);
+            case READING_NECTAR_COUNT -> {
+                if (!feedZoomReady) {
+                    zoomOutBeforeFeedRound();
+                    return;
+                }
+                Integer remaining = FeedScreenAnalyzer.currentNectarCount(
+                        tokens, bitmap.getWidth(), bitmap.getHeight());
+                if (remaining == null) {
+                    statusFeed(getString(R.string.status_feed_count_retry));
+                    schedule(FEED_OCR_RETRY_MILLIS);
+                    return;
+                }
+                if (feedAttemptCount > 0) {
+                    Integer consumed = FeedScreenAnalyzer.consumedNectar(
+                            feedNectarBeforeRound, remaining);
+                    if (consumed == null) {
+                        statusFeed(getString(R.string.status_feed_count_retry));
+                        schedule(FEED_OCR_RETRY_MILLIS);
+                        return;
+                    }
+                    feedNectarBeforeRound = remaining;
+                }
+                if (FeedScreenAnalyzer.shouldAdvanceNectar(
+                        remaining, feedSettings.nectarMinimumThreshold())) {
+                    if (advanceFeedNectar()) {
+                        schedule(200L);
+                    }
+                    return;
+                }
+                if (feedAttemptCount == 0) {
+                    feedNectarBeforeRound = remaining;
+                }
+                feedBloomBaseline = FeedScreenAnalyzer.capture(
+                        bitmap.getWidth(), bitmap.getHeight(), bitmap::getPixel);
+                feedZoomReady = false;
+                beginFeedGesture();
+            }
+            case READING_CONSUMED_COUNT -> {
+                if (closeFeedPikminDetailIfOpen(tokens)) {
+                    return;
+                }
+                Integer remaining = FeedScreenAnalyzer.currentNectarCount(
+                        tokens, bitmap.getWidth(), bitmap.getHeight());
+                FeedScreenAnalyzer.FeedRoundStatistics statistics = remaining == null ? null
+                        : FeedScreenAnalyzer.feedRoundStatistics(
+                                feedNectarBeforeRound, remaining, feedCollectedPetals);
+                if (statistics == null) {
+                    long now = android.os.SystemClock.elapsedRealtime();
+                    if (feedNoEffectStartedAt == 0L) {
+                        feedNoEffectStartedAt = now;
+                    }
+                    if (now - feedNoEffectStartedAt >= FEED_NO_EFFECT_TIMEOUT_MILLIS) {
+                        logFeedSpiral("round-statistics",
+                                "nectar=unreadable petals=" + feedCollectedPetals);
+                        if (feedCollectAfterCount) {
+                            completeFeedPetalCollection();
+                        } else {
+                            switchFeedSquad(true);
+                        }
+                        return;
+                    }
+                    statusFeed(getString(R.string.status_feed_count_retry));
+                    schedule(FEED_OCR_RETRY_MILLIS);
+                    return;
+                }
+                logFeedSpiral("round-statistics",
+                        "nectar=" + statistics.nectarConsumed()
+                                + " petals=" + statistics.petalsObserved());
+                feedNectarBeforeRound = remaining;
+                if (feedCollectAfterCount) {
+                    completeFeedPetalCollection();
+                } else {
+                    switchFeedSquad(true);
+                }
+            }
+            case COLLECTING -> handleFeedPetalCollection(tokens, bitmap);
+            case FEEDING -> observeFeedHold(tokens, bitmap);
+            case ZOOMING_OUT, SWITCHING -> {
+                // 手勢完成回呼負責推進；不在中途截圖重入。
+            }
+        }
+    }
+
+    private void waitForFeedGameReady(List<PetalMatcher.Token> tokens, Bitmap bitmap) {
+        boolean panelOpen = FeedScreenAnalyzer.isNectarPanelOpen(
+                bitmap.getWidth(), bitmap.getHeight(), bitmap::getPixel);
+        Integer count = FeedScreenAnalyzer.currentNectarCount(
+                tokens, bitmap.getWidth(), bitmap.getHeight());
+        String key = panelOpen ? "nectar-panel" : count == null ? "" : "nectar:" + count;
+        if (key.isEmpty()) {
+            feedReadyStability.miss();
+            if (++feedReadyMissingFrames >= FEED_MAX_TARGET_MISSING_FRAMES) {
+                stopWithError(getString(R.string.status_feed_wrong_page));
+                return;
+            }
+            statusFeed(getString(
+                    R.string.status_feed_waiting_ready,
+                    feedReadyMissingFrames,
+                    FEED_MAX_TARGET_MISSING_FRAMES));
+            schedule(FEED_OCR_RETRY_MILLIS);
+            return;
+        }
+        feedReadyMissingFrames = 0;
+        ObservationStability.Result stability = feedReadyStability.observe(
+                key,
+                bitmap.getWidth() / 2,
+                bitmap.getHeight() * 9 / 10,
+                bitmap.getWidth(),
+                bitmap.getHeight());
+        statusFeed(getString(R.string.status_feed_confirming_ready));
+        if (stability == ObservationStability.Result.STABLE) {
+            feedReadyStability.reset();
+            feedStep = FeedStep.OPENING_NECTAR;
+            schedule(0L);
+        } else {
+            schedule(FEED_OCR_RETRY_MILLIS);
+        }
+    }
+
+    private void openFeedNectarSearch(Bitmap bitmap) {
+        int width = bitmap.getWidth();
+        int height = bitmap.getHeight();
+        CardHighlight.Point search = CardHighlight.findPetalSearchButton(
+                width, height, bitmap::getPixel);
+        if (search != null) {
+            feedSearchMissingFrames = 0;
+            feedSearchOpenConfirmationFrames = 0;
+            if (feedSearchActionAttempts >= MAX_ACTION_ATTEMPTS) {
+                stopWithError(getString(R.string.status_feed_search_open_failed));
+                return;
+            }
+            feedSearchActionAttempts++;
+            statusFeed(getString(R.string.status_feed_opening_search));
+            CaptureGeometry captureGeometry = currentCaptureGeometry();
+            ScreenCoordinateTransform.Point screenSearch =
+                    ScreenCoordinateTransform.feedSearchPointToScreen(
+                            search.x(), search.y(), captureGeometry);
+            String mapping = ScreenCoordinateTransform.feedSearchUsesDisplayBitmap(captureGeometry)
+                    ? "display-bitmap" : "scaled";
+            Log.i(TAG, "[FEED-SEARCH] event=gesture-request"
+                    + " attempt=" + feedSearchActionAttempts
+                    + " bitmap=" + search.x() + "," + search.y()
+                    + " screen=" + screenSearch.x() + "," + screenSearch.y()
+                    + " capture=" + captureGeometry.bitmapWidth() + "x"
+                            + captureGeometry.bitmapHeight()
+                    + " expectedBounds=" + captureGeometry.expectedSourceBoundsOnScreen()
+                    + " targetBounds=" + captureGeometry.targetWindowBoundsOnScreen()
+                    + " scale=" + captureGeometry.scaleX() + "," + captureGeometry.scaleY()
+                    + " mapping=" + mapping);
+            dispatchScreenTap(
+                    screenSearch.x(),
+                    screenSearch.y(),
+                    GAME_ACTION_TAP_DURATION_MILLIS,
+                    () -> schedule(700L),
+                    () -> stopWithError(getString(R.string.status_feed_search_open_failed)));
+            return;
+        }
+        boolean searchOpen = CardHighlight.isPetalSearchOpen(
+                width, height, bitmap::getPixel);
+        feedSearchOpenConfirmationFrames = searchOpen
+                ? feedSearchOpenConfirmationFrames + 1 : 0;
+        if (FeedScreenAnalyzer.hasStableSearchEvidence(
+                searchOpen,
+                true,
+                feedSearchOpenConfirmationFrames,
+                FEED_REQUIRED_SEARCH_FRAMES)) {
+            feedSearchActionAttempts = 0;
+            feedSearchMissingFrames = 0;
+            feedSearchOpenConfirmationFrames = 0;
+            feedStep = feedSearchResetPhase == FeedSearchResetPhase.CLOSING
+                    ? FeedStep.CLEARING_NECTAR_SEARCH
+                    : FeedStep.ENTERING_NECTAR_SEARCH;
+            schedule(FEED_OCR_RETRY_MILLIS);
+            return;
+        }
+        if (!searchOpen) {
+            if (++feedSearchMissingFrames >= FEED_MAX_TARGET_MISSING_FRAMES) {
+                stopWithError(getString(R.string.status_feed_search_open_failed));
+                return;
+            }
+        } else {
+            feedSearchMissingFrames = 0;
+        }
+        statusFeed(getString(R.string.status_feed_confirming_search));
+        schedule(FEED_OCR_RETRY_MILLIS);
+    }
+
+    /** 切換下一項精華前點擊一次 X，再交由開啟流程確認收合或直接輸入。 */
+    private void clearFeedNectarSearch(Bitmap bitmap) {
+        if (!CardHighlight.isPetalSearchOpen(
+                bitmap.getWidth(), bitmap.getHeight(), bitmap::getPixel)) {
+            feedSearchActionAttempts = 0;
+            feedSearchMissingFrames = 0;
+            feedSearchResetPhase = FeedSearchResetPhase.NONE;
+            feedStep = FeedStep.OPENING_NECTAR_SEARCH;
+            schedule(FEED_OCR_RETRY_MILLIS);
+            return;
+        }
+        CardHighlight.Point clear = CardHighlight.findPetalSearchCloseButton(
+                bitmap.getWidth(), bitmap.getHeight(), bitmap::getPixel);
+        if (clear == null) {
+            stopWithError(getString(R.string.status_feed_search_input_failed));
+            return;
+        }
+        feedSearchActionAttempts = 1;
+        feedSearchMissingFrames = 0;
+        statusFeed(getString(R.string.status_feed_confirming_search));
+        dispatchTap(
+                clear.x(),
+                clear.y(),
+                GAME_ACTION_TAP_DURATION_MILLIS,
+                () -> {
+                    feedSearchActionAttempts = 0;
+                    feedSearchMissingFrames = 0;
+                    feedSearchResetPhase = FeedSearchResetPhase.NONE;
+                    feedStep = FeedStep.OPENING_NECTAR_SEARCH;
+                    schedule(700L);
+                },
+                () -> stopWithError(getString(R.string.status_feed_search_input_failed)));
+    }
+
+    private void enterFeedNectarSearch() {
+        String query = FeedScreenAnalyzer.nectarSearchQuery(feedTargetFlower);
+        if (query.isBlank()) {
+            stopWithError(getString(R.string.status_feed_search_invalid));
+            return;
+        }
+        if (feedSearchInputAttempts >= MAX_ACTION_ATTEMPTS) {
+            stopWithError(getString(R.string.status_feed_search_input_failed));
+            return;
+        }
+        feedSearchInputAttempts++;
+        AccessibilityNodeInfo searchInput = findGameNode(node ->
+                node.isEditable() && node.isEnabled());
+        if (searchInput == null
+                || (!searchInput.isFocused()
+                        && !searchInput.performAction(AccessibilityNodeInfo.ACTION_FOCUS))
+                || !setEditableText(searchInput, query)) {
+            schedule(FEED_OCR_RETRY_MILLIS);
+            return;
+        }
+        feedSearchTextConfirmationFrames = 0;
+        feedStep = FeedStep.CONFIRMING_NECTAR_SEARCH;
+        statusFeed(getString(R.string.status_feed_confirming_search));
+        schedule(FEED_OCR_RETRY_MILLIS);
+    }
+
+    private void confirmFeedNectarSearch(Bitmap bitmap) {
+        String query = FeedScreenAnalyzer.nectarSearchQuery(feedTargetFlower);
+        boolean searchOpen = CardHighlight.isPetalSearchOpen(
+                bitmap.getWidth(), bitmap.getHeight(), bitmap::getPixel);
+        boolean queryMatches = gameEditableTextMatches(query);
+        feedSearchTextConfirmationFrames = searchOpen && queryMatches
+                ? feedSearchTextConfirmationFrames + 1 : 0;
+        if (FeedScreenAnalyzer.hasStableSearchEvidence(
+                searchOpen,
+                queryMatches,
+                feedSearchTextConfirmationFrames,
+                FEED_REQUIRED_SEARCH_FRAMES)) {
+            feedSearchInputAttempts = 0;
+            feedSearchTextConfirmationFrames = 0;
+            feedSearchKeyboardGuard.reset();
+            feedStep = FeedStep.CLOSING_NECTAR_KEYBOARD;
+            statusFeed(getString(R.string.status_feed_closing_keyboard));
+            schedule(FEED_OCR_RETRY_MILLIS);
+            return;
+        }
+        statusFeed(getString(R.string.status_feed_confirming_search));
+        if (!searchOpen) {
+            feedSearchOpenConfirmationFrames = 0;
+            feedStep = FeedStep.OPENING_NECTAR_SEARCH;
+        } else if (!queryMatches) {
+            feedStep = FeedStep.ENTERING_NECTAR_SEARCH;
+        }
+        schedule(FEED_OCR_RETRY_MILLIS);
+    }
+
+    private void closeFeedSearchKeyboard(Bitmap bitmap) {
+        String query = FeedScreenAnalyzer.nectarSearchQuery(feedTargetFlower);
+        boolean searchPageConfirmed = CardHighlight.isPetalSearchOpen(
+                bitmap.getWidth(), bitmap.getHeight(), bitmap::getPixel)
+                && gameEditableTextMatches(query);
+        SearchKeyboardGuard.Action action = observeSearchKeyboard(feedSearchKeyboardGuard, query, searchPageConfirmed);
+        if (action == SearchKeyboardGuard.Action.COMPLETE) {
+            feedSearchKeyboardGuard.reset();
+            feedStep = FeedStep.SELECTING_NECTAR;
+            schedule(700L);
+            return;
+        }
+        if (action == SearchKeyboardGuard.Action.SEND_BACK) {
+            if (!sendSearchKeyboardBack(feedSearchKeyboardGuard, query, searchPageConfirmed)) {
+                stopWithError(getString(R.string.status_feed_keyboard_failed));
+                return;
+            }
+            schedule(600L);
+            return;
+        }
+        if (action == SearchKeyboardGuard.Action.WAIT) {
+            schedule(FEED_OCR_RETRY_MILLIS);
+            return;
+        }
+        stopWithError(getString(R.string.status_feed_keyboard_failed));
+    }
+
+    private void waitForFeedNectarPanelClose(
+            List<PetalMatcher.Token> tokens, Bitmap bitmap) {
+        boolean detailOpen = FeedScreenAnalyzer.isPikminDetailOpen(tokens);
+        if ((detailOpen || feedDetailCloseAttempts > 0)
+                && closeFeedPikminDetailIfOpen(tokens)) {
+            return;
+        }
+        boolean panelVisible = FeedScreenAnalyzer.isNectarPanelOpen(
+                bitmap.getWidth(), bitmap.getHeight(), bitmap::getPixel);
+        Integer nectarCount = FeedScreenAnalyzer.currentNectarCount(
+                tokens, bitmap.getWidth(), bitmap.getHeight());
+        if (FeedScreenAnalyzer.isFeedViewReadyAfterNectarSelection(
+                panelVisible, detailOpen, nectarCount)) {
+            feedPanelCloseWaitFrames = 0;
+            feedPanelClosedConfirmationFrames++;
+            statusFeed(getString(
+                    R.string.status_feed_confirming_panel_closed,
+                    feedPanelClosedConfirmationFrames,
+                    FEED_REQUIRED_PANEL_CLOSED_FRAMES));
+            if (feedPanelClosedConfirmationFrames < FEED_REQUIRED_PANEL_CLOSED_FRAMES) {
+                schedule(FEED_OCR_RETRY_MILLIS);
+                return;
+            }
+            feedNectarCandidate = null;
+            feedNectarCandidateFrames = 0;
+            feedNectarTapAttempts = 0;
+            feedPanelClosedConfirmationFrames = 0;
+            feedZoomReady = false;
+            zoomOutBeforeFeedRound();
+            return;
+        }
+        feedPanelClosedConfirmationFrames = 0;
+        feedPanelCloseWaitFrames++;
+        if (!panelVisible) {
+            statusFeed(getString(R.string.status_feed_count_retry));
+            if (feedPanelCloseWaitFrames >= FEED_MAX_TARGET_MISSING_FRAMES) {
+                stopWithError(getString(R.string.status_feed_feed_view_failed));
+            } else {
+                schedule(FEED_OCR_RETRY_MILLIS);
+            }
+            return;
+        }
+        statusFeed(getString(R.string.status_feed_waiting_panel_close));
+        if (feedPanelCloseWaitFrames < FEED_PANEL_CLOSE_RETRY_FRAMES) {
+            schedule(FEED_OCR_RETRY_MILLIS);
+            return;
+        }
+        feedPanelCloseWaitFrames = 0;
+        if (feedNectarTapAttempts >= FEED_MAX_NECTAR_TAP_ATTEMPTS) {
+            stopWithError(getString(R.string.status_feed_panel_close_failed));
+            return;
+        }
+        feedNectarCandidate = null;
+        feedNectarCandidateFrames = 0;
+        feedTargetMissingFrames = 0;
+        feedStep = FeedStep.SELECTING_NECTAR;
+        statusFeed(getString(
+                R.string.status_feed_retrying_nectar_tap,
+                feedNectarTapAttempts + 1,
+                FEED_MAX_NECTAR_TAP_ATTEMPTS));
+        schedule(FEED_OCR_RETRY_MILLIS);
+    }
+
+    /** 遊戲自動收合精華面板後，以雙指向中心內縮再開始餵食。 */
+    private void zoomOutBeforeFeedRound() {
+        zoomOutFeedView(() -> {
+            feedStep = FeedStep.READING_NECTAR_COUNT;
+            schedule(0L);
+        });
+    }
+
+    private void zoomOutFeedView(Runnable completed) {
+        Rect bounds = activeGameBoundsStrict();
+        if (bounds == null || bounds.width() <= 0 || bounds.height() <= 0) {
+            stopWithError(getString(R.string.status_feed_zoom_failed));
+            return;
+        }
+        FeedScreenAnalyzer.ZoomOutPinch pinch = FeedScreenAnalyzer.zoomOutPinch(
+                bounds.width(), bounds.height());
+        Path left = new Path();
+        left.moveTo(bounds.left + pinch.leftStartX(), bounds.top + pinch.y());
+        left.lineTo(bounds.left + pinch.leftEndX(), bounds.top + pinch.y());
+        Path right = new Path();
+        right.moveTo(bounds.left + pinch.rightStartX(), bounds.top + pinch.y());
+        right.lineTo(bounds.left + pinch.rightEndX(), bounds.top + pinch.y());
+        feedStep = FeedStep.ZOOMING_OUT;
+        statusFeed(getString(R.string.status_feed_zooming));
+        long generation = runGeneration;
+        GestureDescription gesture = new GestureDescription.Builder()
+                .addStroke(new GestureDescription.StrokeDescription(
+                        left, 0L, FEED_ZOOM_MILLIS))
+                .addStroke(new GestureDescription.StrokeDescription(
+                        right, 0L, FEED_ZOOM_MILLIS))
+                .build();
+        boolean accepted = dispatchGesture(gesture, new GestureResultCallback() {
+            @Override
+            public void onCompleted(GestureDescription gestureDescription) {
+                if (isActiveRun(generation)) {
+                    handler.postDelayed(() -> {
+                        if (isActiveRun(generation)) {
+                            feedZoomReady = true;
+                            completed.run();
+                        }
+                    }, FEED_ZOOM_SETTLE_MILLIS);
+                }
+            }
+
+            @Override
+            public void onCancelled(GestureDescription gestureDescription) {
+                if (isActiveRun(generation)) {
+                    stopWithError(getString(R.string.status_feed_zoom_failed));
+                }
+            }
+        }, handler);
+        if (!accepted && isActiveRun(generation)) {
+            stopWithError(getString(R.string.status_feed_zoom_failed));
+        }
+    }
+
+    private void selectFeedNectar(FeedScreenAnalyzer.NectarSelection selection) {
+        feedTargetMissingFrames = 0;
+        feedNectarCandidate = null;
+        feedNectarCandidateFrames = 0;
+        int effectiveLimit = feedSettings.effectivePetalLimit();
+        if (FeedScreenAnalyzer.hasReachedPetalLimit(
+                selection.petalCount(), effectiveLimit)) {
+            statusFeed(getString(
+                    R.string.status_feed_petal_limit_reached,
+                    selection.petalCount(),
+                    effectiveLimit));
+            if (advanceFeedNectar()) {
+                schedule(200L);
+            }
+            return;
+        }
+        if (FeedScreenAnalyzer.shouldAdvanceNectar(
+                selection.count(), feedSettings.nectarMinimumThreshold())) {
+            if (advanceFeedNectar()) {
+                schedule(FEED_OCR_RETRY_MILLIS);
+            }
+            return;
+        }
+        statusFeed(getString(
+                R.string.status_feed_selecting_nectar,
+                selection.name(),
+                selection.count(),
+                selection.petalCount()));
+        feedNectarTapAttempts++;
+        feedPanelCloseWaitFrames = 0;
+        feedPanelClosedConfirmationFrames = 0;
+        feedStep = FeedStep.WAITING_NECTAR_PANEL_CLOSE;
+        dispatchTap(
+                selection.x(),
+                selection.tapY(),
+                FEED_NECTAR_SELECT_TAP_MILLIS,
+                () -> {
+                    statusFeed(getString(R.string.status_feed_waiting_panel_close));
+                    schedule(650L);
+                },
+                () -> stopWithError(getString(R.string.status_feed_select_failed)));
+    }
+
+    /** 只前進到下一項；PetalMatcher.nextTarget 在尾端回傳 null，不循環。 */
+    private boolean advanceFeedNectar() {
+        String next = PetalMatcher.nextTarget(settings.allowedFlowers(), feedTargetFlower);
+        if (next == null) {
+            finishWithSuccess(getString(R.string.status_feed_no_more_nectar));
+            return false;
+        }
+        feedTargetFlower = next;
+        feedTargetMissingFrames = 0;
+        feedNectarOpenAttempts = 0;
+        feedSearchActionAttempts = 0;
+        feedSearchMissingFrames = 0;
+        feedSearchInputAttempts = 0;
+        feedSearchOpenConfirmationFrames = 0;
+        feedSearchTextConfirmationFrames = 0;
+        feedSearchResetPhase = FeedSearchResetPhase.CLOSING;
+        feedNectarCandidate = null;
+        feedNectarCandidateFrames = 0;
+        feedNectarTapAttempts = 0;
+        feedPanelCloseWaitFrames = 0;
+        feedPanelClosedConfirmationFrames = 0;
+        feedNectarBeforeRound = -1;
+        feedZoomReady = false;
+        feedStep = FeedStep.OPENING_NECTAR;
+        statusFeed(getString(R.string.status_feed_next_nectar, next));
+        return true;
+    }
+
+    private void beginFeedGesture() {
+        feedAttemptCount++;
+        feedStep = FeedStep.FEEDING;
+        statusFeed(getString(
+                R.string.status_feed_feeding,
+                feedRound + 1,
+                feedSettings.feedsPerSquad(),
+                feedAttemptCount,
+                FEED_MAX_GESTURES_PER_ROUND));
+        dispatchFeedHoldGesture(
+                () -> {
+                    feedNoEffectStartedAt = 0L;
+                    long generation = runGeneration;
+                    handler.postDelayed(() -> {
+                        if (isActiveRun(generation)) {
+                            startFeedSpiralHarvest();
+                        }
+                    }, FEED_SPIRAL_HANDOFF_MILLIS);
+                },
+                () -> {
+                    if (feedAttemptCount >= FEED_MAX_GESTURES_PER_ROUND) {
+                        readFeedConsumedNectar(false);
+                    } else {
+                        feedStep = FeedStep.READING_NECTAR_COUNT;
+                        schedule(FEED_OCR_RETRY_MILLIS);
+                    }
+                });
+    }
+
+    private void readFeedConsumedNectar(boolean collectAfterCount) {
+        feedCollectAfterCount = collectAfterCount;
+        feedNoEffectStartedAt = 0L;
+        feedStep = FeedStep.READING_CONSUMED_COUNT;
+        statusFeed(getString(R.string.status_feed_counting_consumed));
+        schedule(FEED_OCR_RETRY_MILLIS);
+    }
+
+    private boolean closeFeedPikminDetailIfOpen(List<PetalMatcher.Token> tokens) {
+        if (!FeedScreenAnalyzer.isPikminDetailOpen(tokens)) {
+            feedDetailCloseAttempts = 0;
+            return false;
+        }
+        if (feedDetailCloseAttempts >= FEED_DETAIL_RETURN_FRAMES) {
+            stopWithError(getString(R.string.status_feed_detail_close_failed));
+            return true;
+        }
+        if (feedDetailCloseAttempts == 0) {
+            feedDetailCloseAttempts = 1;
+            statusFeed(getString(R.string.status_feed_closing_detail));
+            if (!performGlobalAction(GLOBAL_ACTION_BACK)) {
+                stopWithError(getString(R.string.status_feed_detail_close_failed));
+            } else {
+                schedule(FEED_DETAIL_CLOSE_SETTLE_MILLIS);
+            }
+        } else {
+            feedDetailCloseAttempts++;
+            statusFeed(getString(R.string.status_feed_detail_return_checking));
+            schedule(FEED_OCR_RETRY_MILLIS);
+        }
+        return true;
+    }
+
+    private void startFeedSpiralHarvest() {
+        feedStep = FeedStep.COLLECTING;
+        statusFeed(getString(R.string.status_feed_collecting));
+        Rect bounds = activeGameBoundsStrict();
+        if (bounds == null || bounds.width() <= 0 || bounds.height() <= 0) {
+            stopWithError(getString(R.string.status_feed_left_game));
+            return;
+        }
+        feedCollectedPetals = 0;
+        feedCollectReturningFromDetail = false;
+        feedCollectReturningFromShare = false;
+        feedCollectReturnFrames = 0;
+        prepareFeedSpiralHarvest();
+        resetFeedHoldState();
+        schedule(0L);
+    }
+
+    private void resetFeedSpiralState() {
+        feedBloomBaseline = null;
+        prepareFeedSpiralHarvest();
+    }
+
+    private void prepareFeedSpiralHarvest() {
+        feedCollectPhase = FeedCollectPhase.LOCATING_BLOOM;
+        feedBloomCandidate = null;
+        feedBloomCandidateFrames = 0;
+        feedBloomMissingFrames = 0;
+        feedHarvestReceiptWindowStartedAt = 0L;
+        feedHarvestLastReceiptAt = 0L;
+        feedSpiralGestureGain = 0;
+        feedHarvestPreviousReceiptGain = null;
+        feedHarvestReceiptVisible = false;
+    }
+
+    private void handleFeedPetalCollection(
+            List<PetalMatcher.Token> tokens, Bitmap bitmap) {
+        if (handleFeedCollectionOverlay(tokens, bitmap)) {
+            return;
+        }
+        if (feedCollectPhase == FeedCollectPhase.LOCATING_BLOOM) {
+            locateFeedSpiralStart(bitmap);
+            return;
+        }
+        Integer receiptGain = FeedScreenAnalyzer.petalReceiptGain(
+                tokens, bitmap.getWidth(), bitmap.getHeight());
+        receiveFeedSpiralReceipts(
+                receiptGain, android.os.SystemClock.elapsedRealtime());
+    }
+
+    private void locateFeedSpiralStart(Bitmap bitmap) {
+        List<FeedScreenAnalyzer.BloomTarget> targets = FeedScreenAnalyzer.findBloomTargets(
+                feedBloomBaseline,
+                bitmap.getWidth(),
+                bitmap.getHeight(),
+                bitmap::getPixel);
+        FeedScreenAnalyzer.BloomTarget target =
+                FeedScreenAnalyzer.nearestBloomTargetToCenter(
+                        targets, bitmap.getWidth(), bitmap.getHeight());
+        if (target == null) {
+            feedBloomCandidate = null;
+            feedBloomCandidateFrames = 0;
+            feedBloomMissingFrames++;
+            logFeedSpiral("target-missing",
+                    "frame=" + feedBloomMissingFrames
+                            + " max=" + FEED_MAX_BLOOM_TARGET_MISSING_FRAMES);
+            if (feedBloomMissingFrames >= FEED_MAX_BLOOM_TARGET_MISSING_FRAMES) {
+                stopWithError(getString(R.string.status_feed_collect_target_missing));
+            } else {
+                schedule(FEED_COLLECT_SCAN_MILLIS);
+            }
+            return;
+        }
+        feedBloomMissingFrames = 0;
+        if (FeedScreenAnalyzer.isSameBloomTarget(
+                feedBloomCandidate,
+                target,
+                bitmap.getWidth(),
+                bitmap.getHeight())) {
+            feedBloomCandidateFrames++;
+        } else {
+            feedBloomCandidateFrames = 1;
+        }
+        feedBloomCandidate = target;
+        statusFeed(getString(
+                R.string.status_feed_collect_target_confirming,
+                feedBloomCandidateFrames,
+                FEED_REQUIRED_BLOOM_TARGET_FRAMES));
+        logFeedSpiral("target-candidate",
+                "x=" + target.x() + " y=" + target.y()
+                        + " score=" + target.score()
+                        + " frames=" + feedBloomCandidateFrames);
+        if (!FeedScreenAnalyzer.hasStableBloom(
+                feedBloomCandidateFrames, FEED_REQUIRED_BLOOM_TARGET_FRAMES)) {
+            schedule(FEED_COLLECT_SCAN_MILLIS);
+            return;
+        }
+        Rect bounds = activeGameBoundsStrict();
+        if (bounds == null || bounds.width() <= 0 || bounds.height() <= 0) {
+            stopWithError(getString(R.string.status_feed_left_game));
+            return;
+        }
+        ScreenCoordinateTransform.Point screenTarget = ScreenCoordinateTransform.toScreen(
+                feedBloomCandidate.x(), feedBloomCandidate.y(), currentCaptureGeometry());
+        FeedScreenAnalyzer.BloomTarget localTarget = new FeedScreenAnalyzer.BloomTarget(
+                screenTarget.x() - bounds.left,
+                screenTarget.y() - bounds.top,
+                feedBloomCandidate.score());
+        dispatchFeedSpiralHarvest(bounds, localTarget);
+    }
+
+    private void dispatchFeedSpiralHarvest(
+            Rect bounds, FeedScreenAnalyzer.BloomTarget startTarget) {
+        List<FeedScreenAnalyzer.SpiralPoint> points =
+                FeedScreenAnalyzer.ellipticalSpiralFromTarget(
+                        bounds.width(),
+                        bounds.height(),
+                        FEED_SPIRAL_SEGMENTS,
+                        startTarget);
+        if (points.isEmpty()) {
+            stopWithError(getString(R.string.status_feed_collect_spiral_failed));
+            return;
+        }
+        Path path = new Path();
+        FeedScreenAnalyzer.SpiralPoint first = points.get(0);
+        path.moveTo(bounds.left + first.x(), bounds.top + first.y());
+        for (int index = 1; index < points.size(); index++) {
+            FeedScreenAnalyzer.SpiralPoint point = points.get(index);
+            path.lineTo(bounds.left + point.x(), bounds.top + point.y());
+        }
+        feedCollectPhase = FeedCollectPhase.SPIRALING;
+        feedHarvestReceiptWindowStartedAt = android.os.SystemClock.elapsedRealtime();
+        statusFeed(getString(R.string.status_feed_collect_spiral_swiping));
+        logFeedSpiral("gesture-request",
+                "bounds=" + bounds + " startX=" + first.x() + " startY=" + first.y()
+                        + " points=" + points.size());
+        dispatchPath(
+                path,
+                FEED_SPIRAL_HARVEST_MILLIS,
+                () -> {
+                    feedCollectPhase = FeedCollectPhase.RECEIVING_SPIRAL_RECEIPTS;
+                    feedHarvestReceiptWindowStartedAt =
+                            android.os.SystemClock.elapsedRealtime();
+                    logFeedSpiral("gesture-completed",
+                            "gestureGain=" + feedSpiralGestureGain);
+                    schedule(FEED_COLLECT_SCAN_MILLIS);
+                },
+                () -> stopWithError(getString(R.string.status_feed_collect_spiral_failed)));
+        schedule(FEED_COLLECT_SCAN_MILLIS);
+    }
+
+    private void receiveFeedSpiralReceipts(Integer receiptGain, long now) {
+        int newGain = FeedScreenAnalyzer.newPetalReceiptGain(
+                receiptGain, feedHarvestPreviousReceiptGain, feedHarvestReceiptVisible);
+        if (receiptGain == null) {
+            feedHarvestReceiptVisible = false;
+        } else {
+            feedHarvestPreviousReceiptGain = receiptGain;
+            feedHarvestReceiptVisible = true;
+        }
+        if (newGain > 0) {
+            feedSpiralGestureGain += newGain;
+            feedHarvestLastReceiptAt = now;
+            recordFeedPetalGain(newGain);
+            logFeedSpiral("receipt",
+                    "gain=" + newGain + " totalGain=" + feedCollectedPetals);
+        }
+        if (feedCollectPhase == FeedCollectPhase.SPIRALING) {
+            schedule(FEED_COLLECT_SCAN_MILLIS);
+            return;
+        }
+        long elapsed = now - feedHarvestReceiptWindowStartedAt;
+        boolean quiet = feedHarvestLastReceiptAt == 0L
+                || now - feedHarvestLastReceiptAt >= FEED_HARVEST_RECEIPT_QUIET_MILLIS;
+        if (elapsed < FEED_HARVEST_RECEIPT_MAX_WINDOW_MILLIS
+                && (elapsed < FEED_HARVEST_RECEIPT_WINDOW_MILLIS || !quiet)) {
+            statusFeed(getString(
+                    R.string.status_feed_collect_spiral_receiving,
+                    feedSpiralGestureGain,
+                    feedCollectedPetals));
+            schedule(FEED_COLLECT_SCAN_MILLIS);
+            return;
+        }
+        readFeedConsumedNectar(true);
+    }
+
+    private void recordFeedPetalGain(int gain) {
+        feedCollectedPetals += gain;
+        statusFeed(getString(
+                R.string.status_feed_collect_receipt,
+                gain,
+                feedCollectedPetals));
+    }
+
+
+    /** 分享預覽與皮克敏詳情是兩層畫面，每次只返回一層並確認。 */
+    private boolean handleFeedCollectionOverlay(
+            List<PetalMatcher.Token> tokens, Bitmap bitmap) {
+        boolean shareOpen = FeedScreenAnalyzer.isSharePreviewOpen(tokens);
+        boolean detailOpen = FeedScreenAnalyzer.isPikminDetailOpen(tokens);
+        if (feedCollectReturningFromShare) {
+            if (!shareOpen) {
+                feedCollectReturningFromShare = false;
+                feedCollectReturnFrames = 0;
+                schedule(FEED_COLLECT_SCAN_MILLIS);
+            } else if (++feedCollectReturnFrames >= FEED_DETAIL_RETURN_FRAMES) {
+                stopWithError(getString(R.string.status_feed_share_close_failed));
+            } else {
+                statusFeed(getString(R.string.status_feed_share_return_checking));
+                schedule(FEED_OCR_RETRY_MILLIS);
+            }
+            return true;
+        }
+        if (shareOpen) {
+            feedCollectReturningFromShare = true;
+            feedCollectReturnFrames = 0;
+            statusFeed(getString(R.string.status_feed_closing_share));
+            if (!performGlobalAction(GLOBAL_ACTION_BACK)) {
+                stopWithError(getString(R.string.status_feed_share_close_failed));
+            } else {
+                schedule(FEED_DETAIL_CLOSE_SETTLE_MILLIS);
+            }
+            return true;
+        }
+        if (feedCollectReturningFromDetail) {
+            Integer nectar = detailOpen ? null : FeedScreenAnalyzer.currentNectarCount(
+                    tokens, bitmap.getWidth(), bitmap.getHeight());
+            if (nectar != null) {
+                feedCollectReturningFromDetail = false;
+                feedCollectReturnFrames = 0;
+                schedule(FEED_COLLECT_SCAN_MILLIS);
+                return true;
+            }
+            if (++feedCollectReturnFrames >= FEED_DETAIL_RETURN_FRAMES) {
+                stopWithError(getString(R.string.status_feed_detail_close_failed));
+            } else {
+                statusFeed(getString(R.string.status_feed_detail_return_checking));
+                schedule(FEED_OCR_RETRY_MILLIS);
+            }
+            return true;
+        }
+        if (!detailOpen) {
+            return false;
+        }
+        feedCollectReturningFromDetail = true;
+        feedCollectReturnFrames = 0;
+        logFeedSpiral("detail-return",
+                "phase=" + feedCollectPhase);
+        statusFeed(getString(R.string.status_feed_closing_detail));
+        if (!performGlobalAction(GLOBAL_ACTION_BACK)) {
+            stopWithError(getString(R.string.status_feed_detail_close_failed));
+        } else {
+            schedule(FEED_DETAIL_CLOSE_SETTLE_MILLIS);
+        }
+        return true;
+    }
+
+    private void logFeedSpiral(String event, String details) {
+        if (BuildConfig.GEOMETRY_VALIDATION) {
+            Log.i(TAG, "FEED_SPIRAL event=" + event + " " + details);
+        }
+    }
+
+    private void completeFeedPetalCollection() {
+        feedRound++;
+        feedAttemptCount = 0;
+        feedNectarBeforeRound = -1;
+        feedCollectAfterCount = false;
+        feedNoEffectStartedAt = 0L;
+        feedDetailCloseAttempts = 0;
+        feedZoomReady = false;
+        feedCollectedPetals = 0;
+        feedCollectReturningFromDetail = false;
+        feedCollectReturningFromShare = false;
+        feedCollectReturnFrames = 0;
+        resetFeedSpiralState();
+        if (feedRound >= feedSettings.feedsPerSquad()) {
+            switchFeedSquad(false);
+        } else {
+            prepareFeedSearchForCurrentTarget();
+            statusFeed(getString(
+                    R.string.status_feed_round_complete,
+                    feedRound,
+                    feedSettings.feedsPerSquad()));
+            schedule(FEED_OCR_RETRY_MILLIS);
+        }
+    }
+
+    private void switchFeedSquad(boolean failedRound) {
+        if (feedSquadSwitchCount >= feedSettings.maxSquadSwitches()) {
+            if (failedRound) {
+                stopWithError(getString(R.string.status_feed_no_effect_stopped));
+            } else {
+                finishWithSuccess(getString(
+                        R.string.status_feed_completed,
+                        feedSquadSwitchCount,
+                        feedSettings.maxSquadSwitches()));
+            }
+            return;
+        }
+        feedStep = FeedStep.SWITCHING;
+        feedZoomReady = false;
+        statusFeed(getString(
+                R.string.status_feed_switching,
+                feedSquadSwitchCount + 1,
+                feedSettings.maxSquadSwitches()));
+        tapFeedWhistle(1);
+    }
+
+    private void tapFeedWhistle(int tapNumber) {
+        Rect bounds = activeGameBoundsStrict();
+        if (bounds == null) {
+            stopWithError(getString(R.string.status_feed_left_game));
+            return;
+        }
+        dispatchScreenTap(
+                Math.round(bounds.left + bounds.width() * 0.87f),
+                Math.round(bounds.top + bounds.height() * 0.915f),
+                90L,
+                () -> {
+                    if (tapNumber < FEED_WHISTLE_TAP_COUNT) {
+                        handler.postDelayed(
+                                () -> tapFeedWhistle(tapNumber + 1),
+                                FEED_WHISTLE_TAP_GAP_MILLIS);
+                        return;
+                    }
+                    feedSquadSwitchCount++;
+                    feedRound = 0;
+                    feedAttemptCount = 0;
+                    feedNectarBeforeRound = -1;
+                    feedCollectAfterCount = false;
+                    feedNoEffectStartedAt = 0L;
+                    feedDetailCloseAttempts = 0;
+                    feedZoomReady = false;
+                    prepareFeedSearchForCurrentTarget();
+                    handler.postDelayed(() -> schedule(0L), FEED_SQUAD_SETTLE_MILLIS);
+                },
+                () -> stopWithError(getString(R.string.status_feed_whistle_failed)));
+    }
+
+    private void prepareFeedSearchForCurrentTarget() {
+        feedTargetMissingFrames = 0;
+        feedNectarOpenAttempts = 0;
+        feedSearchActionAttempts = 0;
+        feedSearchMissingFrames = 0;
+        feedSearchInputAttempts = 0;
+        feedSearchOpenConfirmationFrames = 0;
+        feedSearchTextConfirmationFrames = 0;
+        feedSearchResetPhase = FeedSearchResetPhase.CLOSING;
+        feedNectarCandidate = null;
+        feedNectarCandidateFrames = 0;
+        feedNectarTapAttempts = 0;
+        feedPanelCloseWaitFrames = 0;
+        feedPanelClosedConfirmationFrames = 0;
+        feedNectarBeforeRound = -1;
+        feedZoomReady = false;
+        feedStep = FeedStep.OPENING_NECTAR;
+    }
+
+    /** 將精華向上拖曳後分段持續按住；每段完成後依精華 OCR 回執決定是否放開。 */
+    private void dispatchFeedHoldGesture(Runnable completed, Runnable failed) {
+        Rect bounds = activeGameBoundsStrict();
+        if (bounds == null || bounds.width() <= 0 || bounds.height() <= 0) {
+            failed.run();
+            return;
+        }
+        float startX = bounds.left + bounds.width() * 0.52f;
+        float startY = bounds.top + bounds.height() * 0.90f;
+        float endX = bounds.left + bounds.width() * 0.50f;
+        float endY = bounds.top + bounds.height() * 0.54f;
+        Path drag = new Path();
+        drag.moveTo(startX, startY);
+        drag.lineTo(endX, endY);
+        GestureDescription.StrokeDescription dragStroke =
+                new GestureDescription.StrokeDescription(drag, 0L, FEED_DRAG_MILLIS, true);
+        resetFeedHoldState();
+        feedHoldX = endX;
+        feedHoldY = endY;
+        feedHoldLastCount = feedNectarBeforeRound >= 0 ? feedNectarBeforeRound : null;
+        feedHoldCompleted = completed;
+        feedHoldFailed = failed;
+        long generation = runGeneration;
+        GestureDescription gesture = new GestureDescription.Builder()
+                .addStroke(dragStroke)
+                .build();
+        boolean accepted = dispatchGesture(gesture, new GestureResultCallback() {
+            @Override
+            public void onCompleted(GestureDescription gestureDescription) {
+                if (!isActiveRun(generation)) {
+                    return;
+                }
+                feedHoldStroke = dragStroke;
+                feedHoldStartedAt = android.os.SystemClock.elapsedRealtime();
+                dispatchNextFeedHoldSlice();
+            }
+
+            @Override
+            public void onCancelled(GestureDescription gestureDescription) {
+                if (isActiveRun(generation)) {
+                    finishFeedHoldGesture(false);
+                }
+            }
+        }, handler);
+        if (!accepted) {
+            finishFeedHoldGesture(false);
+        }
+    }
+
+    private void dispatchNextFeedHoldSlice() {
+        if (feedHoldStroke == null || feedHoldReleasing) {
+            return;
+        }
+        long elapsed = android.os.SystemClock.elapsedRealtime() - feedHoldStartedAt;
+        if (elapsed >= FEED_HOLD_MAX_MILLIS) {
+            releaseFeedHoldGesture("timeout");
+            return;
+        }
+        long duration = Math.min(FEED_HOLD_SAMPLE_MILLIS, FEED_HOLD_MAX_MILLIS - elapsed);
+        float nextX = feedHoldX + feedHoldDirection;
+        Path hold = feedHoldPath(nextX);
+        GestureDescription.StrokeDescription nextStroke = feedHoldStroke.continueStroke(
+                hold, 0L, Math.max(1L, duration), true);
+        long generation = runGeneration;
+        boolean accepted = dispatchGesture(
+                new GestureDescription.Builder().addStroke(nextStroke).build(),
+                new GestureResultCallback() {
+                    @Override
+                    public void onCompleted(GestureDescription gestureDescription) {
+                        if (!isActiveRun(generation) || feedHoldReleasing) {
+                            return;
+                        }
+                        feedHoldStroke = nextStroke;
+                        feedHoldX = nextX;
+                        feedHoldDirection = -feedHoldDirection;
+                        schedule(0L);
+                    }
+
+                    @Override
+                    public void onCancelled(GestureDescription gestureDescription) {
+                        if (isActiveRun(generation)) {
+                            finishFeedHoldGesture(false);
+                        }
+                    }
+                },
+                handler);
+        if (!accepted) {
+            finishFeedHoldGesture(false);
+        }
+    }
+
+    private void observeFeedHold(List<PetalMatcher.Token> tokens, Bitmap bitmap) {
+        if (feedHoldStroke == null || feedHoldReleasing) {
+            return;
+        }
+        long elapsed = android.os.SystemClock.elapsedRealtime() - feedHoldStartedAt;
+        Integer current = FeedScreenAnalyzer.currentNectarCount(
+                tokens, bitmap.getWidth(), bitmap.getHeight());
+        FeedScreenAnalyzer.NectarHoldProgress progress = FeedScreenAnalyzer.observeNectarHold(
+                feedHoldLastCount,
+                feedHoldStableReads,
+                current,
+                elapsed,
+                FEED_HOLD_MIN_MILLIS,
+                FEED_HOLD_MAX_MILLIS,
+                FEED_HOLD_REQUIRED_STABLE_READS);
+        feedHoldLastCount = progress.count();
+        feedHoldStableReads = progress.stableReads();
+        logFeedSpiral("hold-observation",
+                "elapsedMs=" + elapsed
+                        + " count=" + current
+                        + " stableReads=" + feedHoldStableReads);
+        if (progress.shouldRelease()) {
+            releaseFeedHoldGesture(elapsed >= FEED_HOLD_MAX_MILLIS ? "timeout" : "stable");
+            return;
+        }
+        if (current == null) {
+            statusFeed(getString(R.string.status_feed_count_retry));
+        }
+        dispatchNextFeedHoldSlice();
+    }
+
+    private void releaseFeedHoldGesture(String reason) {
+        if (feedHoldStroke == null || feedHoldReleasing) {
+            return;
+        }
+        feedHoldReleasing = true;
+        float releaseX = feedHoldX + feedHoldDirection;
+        GestureDescription.StrokeDescription releaseStroke = feedHoldStroke.continueStroke(
+                feedHoldPath(releaseX), 0L, 1L, false);
+        long generation = runGeneration;
+        logFeedSpiral("hold-release",
+                "reason=" + reason
+                        + " elapsedMs="
+                        + (android.os.SystemClock.elapsedRealtime() - feedHoldStartedAt)
+                        + " count=" + feedHoldLastCount
+                        + " stableReads=" + feedHoldStableReads);
+        boolean accepted = dispatchGesture(
+                new GestureDescription.Builder().addStroke(releaseStroke).build(),
+                new GestureResultCallback() {
+                    @Override
+                    public void onCompleted(GestureDescription gestureDescription) {
+                        if (isActiveRun(generation)) {
+                            finishFeedHoldGesture(true);
+                        }
+                    }
+
+                    @Override
+                    public void onCancelled(GestureDescription gestureDescription) {
+                        if (isActiveRun(generation)) {
+                            finishFeedHoldGesture(false);
+                        }
+                    }
+                },
+                handler);
+        if (!accepted) {
+            finishFeedHoldGesture(false);
+        }
+    }
+
+    private Path feedHoldPath(float endX) {
+        Path path = new Path();
+        path.moveTo(feedHoldX, feedHoldY);
+        path.lineTo(endX, feedHoldY);
+        return path;
+    }
+
+    private void finishFeedHoldGesture(boolean succeeded) {
+        Runnable callback = succeeded ? feedHoldCompleted : feedHoldFailed;
+        resetFeedHoldState();
+        if (callback != null) {
+            callback.run();
+        }
+    }
+
+    private void resetFeedHoldState() {
+        feedHoldStroke = null;
+        feedHoldX = 0f;
+        feedHoldY = 0f;
+        feedHoldDirection = 1f;
+        feedHoldStartedAt = 0L;
+        feedHoldLastCount = null;
+        feedHoldStableReads = 0;
+        feedHoldReleasing = false;
+        feedHoldCompleted = null;
+        feedHoldFailed = null;
+    }
+
+    private void statusFeed(String message) {
+        setStatus(message);
+        setRunStatus(
+                AutomationMode.FEED,
+                OverlayRunStatus.Kind.RECOGNIZING,
+                message,
+                getString(
+                        R.string.overlay_feed_progress,
+                        feedRound,
+                        feedSettings.feedsPerSquad(),
+                        feedSquadSwitchCount,
+                        feedSettings.maxSquadSwitches()));
+    }
+
     /**  派遣頁面順序：清單 → 詳細頁 → 選皮 → GO → 結果 → 清單。 */
     private void handleExpeditionDispatch(OcrScan.Frame frame, Bitmap bitmap) {
         List<PetalMatcher.Token> tokens = frame.tokens();
@@ -959,6 +2748,8 @@ public final class PetalAccessibilityService extends AccessibilityService {
         ExpeditionScreenAnalyzer.Screen screen = ExpeditionScreenAnalyzer.classify(
                 tokens, bitmap.getWidth(), bitmap.getHeight(), bitmap::getPixel);
         ExpeditionDispatchSession.Stage previousStage = expeditionDispatchSession.stage();
+        int previousDetailTapAttempts = previousStage == ExpeditionDispatchSession.Stage.DETAIL
+                ? expeditionDispatchSession.detailTapAttempts() : 0;
         if ((previousStage == ExpeditionDispatchSession.Stage.WAIT_RESULT
                         || previousStage == ExpeditionDispatchSession.Stage.VERIFY_RETURN)
                 && ocrScreen == ExpeditionScreenAnalyzer.Screen.EXPLORE_LIST) {
@@ -975,6 +2766,13 @@ public final class PetalAccessibilityService extends AccessibilityService {
                     now);
         }
         ExpeditionDispatchSession.Stage stage = expeditionDispatchSession.stage();
+        if (previousStage == ExpeditionDispatchSession.Stage.DETAIL
+                && stage == ExpeditionDispatchSession.Stage.SELECTION) {
+            recordDispatchDetailDiagnostic(
+                    "selection-confirmed", "destination-confirmed", "unknown",
+                    previousDetailTapAttempts, false,
+                    bitmap.getWidth(), bitmap.getHeight(), null);
+        }
         if (BuildConfig.DEBUG && previousStage != stage) {
             Log.d(TAG, "DISPATCH_STAGE from=" + previousStage
                     + " to=" + stage + " screen=" + screen + " ocrScreen=" + ocrScreen);
@@ -1097,20 +2895,18 @@ public final class PetalAccessibilityService extends AccessibilityService {
         int height = bitmap.getHeight();
         CaptureGeometry captureGeometry = currentCaptureGeometry();
         long generation = runGeneration;
-        busy = true;
         setRunStatus(
                 AutomationMode.DISPATCH,
                 OverlayRunStatus.Kind.RECOGNIZING,
                 getString(R.string.status_reward_scanning),
                 getString(R.string.overlay_reward_safety_items));
-        scanner.scan(
+        startOcrTransaction(
                 bitmap,
                 OcrScan.Profile.DISPATCH_LIST,
                 captureGeometry,
-                getMainExecutor(),
-                new OcrScanner.FrameCallback() {
-            @Override
-            public void onSuccess(OcrScan.Frame frame) {
+                "dispatch-focused",
+                false,
+                frame -> {
                 runWithCaptureGeometry(frame.captureGeometry(), () -> {
                 if (!isActiveRun(generation)
                         || expeditionDispatchSession == null
@@ -1118,7 +2914,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
                                 != ExpeditionDispatchSession.Stage.LIST_SEARCH) {
                     return;
                 }
-                busy = false;
+                recordOcrDiagnostic("dispatch-focused", frame);
                 long now = android.os.SystemClock.elapsedRealtime();
                 ExpeditionScreenAnalyzer.Target target = ExpeditionScreenAnalyzer.findTarget(
                         frame.tokens(),
@@ -1132,17 +2928,15 @@ public final class PetalAccessibilityService extends AccessibilityService {
                     handleDispatchListTarget(target, width, height, now);
                 }
                 });
-            }
-
-            @Override
-            public void onFailure(Exception error) {
+                },
+                error -> {
                 if (isActiveRun(generation)) {
-                    busy = false;
+                    recordOcrDiagnosticFailure(
+                            "dispatch-focused", OcrScan.Profile.DISPATCH_LIST, captureGeometry, error);
                     handleDispatchListMiss(
                             listStartVisible, android.os.SystemClock.elapsedRealtime());
                 }
-            }
-        });
+                });
     }
 
     private void handleDispatchListMiss(boolean listStartVisible, long now) {
@@ -1184,66 +2978,140 @@ public final class PetalAccessibilityService extends AccessibilityService {
             Bitmap bitmap,
             ExpeditionScreenAnalyzer.Screen screen,
             long now) {
-        ExpeditionScreenAnalyzer.Point action = ExpeditionScreenAnalyzer.findDetailAction(
-                tokens, bitmap.getWidth(), bitmap.getHeight(), bitmap::getPixel);
+        int width = bitmap.getWidth();
+        int height = bitmap.getHeight();
+        ExpeditionScreenAnalyzer.Point action = screen == ExpeditionScreenAnalyzer.Screen.DETAIL
+                ? ExpeditionScreenAnalyzer.findDetailAction(
+                        tokens, width, height, bitmap::getPixel)
+                : null;
         if (expeditionDispatchSession.transitionPending()) {
-            if (action != null && expeditionDispatchSession.shouldRetryDetailTap(screen, now)) {
+            if (expeditionDispatchSession.shouldRetryDetailTap(screen, action != null, now)) {
                 ExpeditionDispatchSession.Confirmation retryConfirmation =
                         expeditionDispatchSession.confirm(
-                                "DETAIL_RETRY:" + action.x() / 24 + ":" + action.y() / 24,
-                                now);
+                                dispatchDetailConfirmationKey("RETRY", action), now);
+                if (retryConfirmation == ExpeditionDispatchSession.Confirmation.STAGE_TIMEOUT) {
+                    recordDispatchDetailDiagnostic(
+                            "stage-timeout", "attempt-limit", "accepted",
+                            expeditionDispatchSession.detailTapAttempts(), true,
+                            width, height, action);
+                }
                 if (!handleDispatchConfirmation(retryConfirmation)) {
-                    waitForDispatchFrame(getString(R.string.status_reward_go_explore_retrying));
+                    if (retryConfirmation != ExpeditionDispatchSession.Confirmation.STAGE_TIMEOUT) {
+                        recordDispatchDetailDiagnostic(
+                                "confirmation-waiting", "ocr-match", "accepted",
+                                expeditionDispatchSession.detailTapAttempts(), true,
+                                width, height, action);
+                        waitForDispatchFrame(
+                                getString(R.string.status_reward_go_explore_retrying));
+                    }
                     return;
                 }
-                dispatchDetailActionTap(action, now, true);
+                dispatchDetailActionTap(action, width, height, now, true);
                 return;
             }
             ExpeditionDispatchSession.Confirmation timeout =
                     expeditionDispatchSession.confirm("", now);
+            if (timeout == ExpeditionDispatchSession.Confirmation.STAGE_TIMEOUT) {
+                String reason = screen == ExpeditionScreenAnalyzer.Screen.DETAIL
+                        ? action == null ? "ocr-no-match" : "attempt-limit"
+                        : "destination-missing";
+                recordDispatchDetailDiagnostic(
+                        "stage-timeout", reason,
+                        action == null ? "none" : "accepted",
+                        expeditionDispatchSession.detailTapAttempts(), true,
+                        width, height, action);
+            }
             if (!handleDispatchConfirmation(timeout)) {
                 waitForDispatchFrame(getString(R.string.status_reward_go_explore_waiting));
             }
             return;
         }
-        if (screen == ExpeditionScreenAnalyzer.Screen.EXPLORE_LIST) {
-            waitForDispatchFrame(getString(R.string.status_reward_opening_detail));
-            return;
-        }
-        if (action == null) {
+        if (screen != ExpeditionScreenAnalyzer.Screen.DETAIL || action == null) {
             ExpeditionDispatchSession.Confirmation timeout = expeditionDispatchSession.confirm("", now);
+            if (timeout == ExpeditionDispatchSession.Confirmation.STAGE_TIMEOUT) {
+                recordDispatchDetailDiagnostic(
+                        "stage-timeout",
+                        screen == ExpeditionScreenAnalyzer.Screen.DETAIL
+                                ? "ocr-no-match" : "destination-missing",
+                        action == null ? "none" : "unknown",
+                        expeditionDispatchSession.detailTapAttempts(), false,
+                        width, height, action);
+            }
             if (!handleDispatchConfirmation(timeout)) {
                 waitForDispatchFrame(getString(R.string.status_reward_go_explore));
             }
             return;
         }
-        ExpeditionDispatchSession.Confirmation confirmation = expeditionDispatchSession.confirm(
-                "DETAIL:" + action.x() / 24 + ":" + action.y() / 24, now);
-        if (!handleDispatchConfirmation(confirmation)) {
-            waitForDispatchFrame(getString(R.string.status_reward_go_explore));
+        ExpeditionDispatchSession.Confirmation actionConfirmation =
+                expeditionDispatchSession.confirm(
+                        dispatchDetailConfirmationKey("INITIAL", action), now);
+        if (actionConfirmation == ExpeditionDispatchSession.Confirmation.STAGE_TIMEOUT) {
+            recordDispatchDetailDiagnostic(
+                    "stage-timeout", "attempt-limit", "accepted",
+                    expeditionDispatchSession.detailTapAttempts(), false,
+                    width, height, action);
+        }
+        if (!handleDispatchConfirmation(actionConfirmation)) {
+            if (actionConfirmation != ExpeditionDispatchSession.Confirmation.STAGE_TIMEOUT) {
+                recordDispatchDetailDiagnostic(
+                        "confirmation-waiting", "ocr-match", "accepted",
+                        expeditionDispatchSession.detailTapAttempts(), false,
+                        width, height, action);
+                waitForDispatchFrame(getString(R.string.status_reward_confirming));
+            }
             return;
         }
-        dispatchDetailActionTap(action, now, false);
+        dispatchDetailActionTap(action, width, height, now, false);
+    }
+
+    private String dispatchDetailConfirmationKey(
+            String phase, ExpeditionScreenAnalyzer.Point action) {
+        return "DETAIL_ACTION:" + phase + ":" + action.x() / 24 + ":" + action.y() / 24;
     }
 
     private void dispatchDetailActionTap(
-            ExpeditionScreenAnalyzer.Point action, long now, boolean retry) {
+            ExpeditionScreenAnalyzer.Point action,
+            int bitmapWidth,
+            int bitmapHeight,
+            long now,
+            boolean retry) {
         if (!expeditionDispatchSession.beginDetailTapTransition(now)) {
+            recordDispatchDetailDiagnostic(
+                    "stage-timeout", "attempt-limit", "accepted",
+                    expeditionDispatchSession.detailTapAttempts(),
+                    expeditionDispatchSession.transitionPending(),
+                    bitmapWidth, bitmapHeight, action);
             stopWithError(getString(R.string.status_reward_stage_timeout));
             return;
         }
+        recordDispatchDetailDiagnostic(
+                "tap-requested", "ocr-match", "accepted",
+                expeditionDispatchSession.detailTapAttempts(), true,
+                bitmapWidth, bitmapHeight, action);
         dispatchActionTap(
                 action,
                 getString(retry
                         ? R.string.status_reward_go_explore_retrying
                         : R.string.status_reward_go_explore),
+                DISPATCH_AFTER_TAP_DELAY_MILLIS,
                 () -> {
+                    recordDispatchDetailDiagnostic(
+                            "tap-completed", "gesture", "accepted",
+                            expeditionDispatchSession.detailTapAttempts(), true,
+                            bitmapWidth, bitmapHeight, action);
                     setStatus(getString(R.string.status_reward_go_explore_waiting));
                     setRunStatus(
                             AutomationMode.DISPATCH,
                             OverlayRunStatus.Kind.RECOGNIZING,
                             getString(R.string.status_reward_go_explore_waiting),
                             getString(R.string.overlay_reward_safety_items));
+                },
+                () -> {
+                    recordDispatchDetailDiagnostic(
+                            "tap-failed", "gesture", "accepted",
+                            expeditionDispatchSession.detailTapAttempts(), true,
+                            bitmapWidth, bitmapHeight, action);
+                    stopWithError(getString(R.string.status_reward_gesture_failed));
                 });
     }
 
@@ -1275,70 +3143,107 @@ public final class PetalAccessibilityService extends AccessibilityService {
 
         if (!dispatchPikminSelected) {
             if (dispatchSelectionMethod == DispatchSelectionMethod.AUTO) {
+                String autoLayout = dispatchSearchOpened ? "search-expanded" : "default";
+                ExpeditionScreenAnalyzer.Point automatic =
+                        ExpeditionScreenAnalyzer.findPikminAutoButton(
+                                tokens, bitmap.getWidth(), bitmap.getHeight());
                 ExpeditionScreenAnalyzer.Point visibleGo =
                         ExpeditionScreenAnalyzer.findPikminGoButton(
                                 tokens, bitmap.getWidth(), bitmap.getHeight());
                 int selectedCount = ExpeditionScreenAnalyzer.selectedPikminCount(tokens);
                 if (selectedCount > 0 || visibleGo != null) {
-                    String evidenceKey = "AUTO_SELECTED:" + selectedCount + ":"
-                            + (visibleGo == null ? "NO_GO"
-                                    : visibleGo.x() / 24 + ":" + visibleGo.y() / 24);
                     ExpeditionDispatchSession.Confirmation selectedConfirmation =
-                            expeditionDispatchSession.confirm(evidenceKey, now);
+                            expeditionDispatchSession.confirm("AUTO_SELECTED", now);
                     if (!handleDispatchConfirmation(selectedConfirmation)) {
                         waitForDispatchFrame(getString(R.string.status_reward_selecting_pikmin));
                         return;
                     }
+                    if (automatic != null) {
+                        recordDispatchSelectionDiagnostic(
+                                "selection-confirmed",
+                                selectedCount > 0 && visibleGo != null
+                                        ? "selected-count-and-go"
+                                        : selectedCount > 0 ? "selected-count" : "go-visible",
+                                dispatchAutoTapAttempts,
+                                selectedCount,
+                                visibleGo != null,
+                                autoLayout,
+                                bitmap,
+                                automatic);
+                    }
                     dispatchPikminSelected = true;
                     dispatchAutoTapAttempts = 0;
                     dispatchAutoResultMissingFrames = 0;
-                    dispatchAutoControlMissingFrames = 0;
+                    dispatchAutoAnchorMissingFrames = 0;
                     expeditionDispatchSession.recordProgress(now);
                     waitForDispatchFrame(getString(R.string.status_reward_selecting_pikmin));
                     return;
                 }
                 if (dispatchAutoTapAttempts > 0 && dispatchAutoResultMissingFrames < 2) {
                     dispatchAutoResultMissingFrames++;
+                    if (dispatchAutoResultMissingFrames == 2 && automatic != null) {
+                        recordDispatchSelectionDiagnostic(
+                                "result-missing", "result-not-observed",
+                                dispatchAutoTapAttempts, selectedCount, false,
+                                autoLayout, bitmap, automatic);
+                    }
                     waitForDispatchFrame(getString(R.string.status_reward_selecting_pikmin));
                     return;
                 }
                 if (dispatchAutoTapAttempts >= MAX_ACTION_ATTEMPTS) {
+                    if (automatic != null) {
+                        recordDispatchSelectionDiagnostic(
+                                "attempt-limit", "attempt-limit",
+                                dispatchAutoTapAttempts, selectedCount, false,
+                                autoLayout, bitmap, automatic);
+                    }
                     stopWithError(getString(R.string.status_reward_selection_missing));
                     return;
                 }
-                ExpeditionScreenAnalyzer.Point automatic =
-                        ExpeditionScreenAnalyzer.findPikminAutoButton(
-                                tokens, bitmap.getWidth(), bitmap.getHeight());
                 if (automatic == null) {
-                    dispatchAutoControlMissingFrames++;
-                    if (BuildConfig.DEBUG) {
-                        Log.d(TAG, "DISPATCH_AUTO_MISSING "
-                                + ExpeditionScreenAnalyzer.pikminAutoDiagnostic(
-                                        tokens, bitmap.getWidth(), bitmap.getHeight()));
-                    }
-                    if (dispatchAutoControlMissingFrames >= MAX_ACTION_ATTEMPTS) {
+                    dispatchAutoAnchorMissingFrames++;
+                    if (dispatchAutoAnchorMissingFrames >= MAX_ACTION_ATTEMPTS) {
                         stopWithError(getString(R.string.status_reward_selection_missing));
                     } else {
-                        waitForDispatchFrame(
-                                getString(R.string.status_reward_selection_retrying));
+                        waitForDispatchFrame(getString(R.string.status_reward_selecting_pikmin));
                     }
                     return;
                 }
-                dispatchAutoControlMissingFrames = 0;
+                dispatchAutoAnchorMissingFrames = 0;
                 ExpeditionDispatchSession.Confirmation autoConfirmation =
                         expeditionDispatchSession.confirm(
-                                "AUTO:" + automatic.x() / 24 + ":" + automatic.y() / 24,
+                                "AUTO_SELECTION_SCREEN:" + autoLayout,
                                 now);
                 if (!handleDispatchConfirmation(autoConfirmation)) {
+                    recordDispatchSelectionDiagnostic(
+                            "confirmation-waiting", "two-frame-selection",
+                            dispatchAutoTapAttempts, selectedCount, false,
+                            autoLayout, bitmap, automatic);
                     waitForDispatchFrame(getString(R.string.status_reward_selecting_pikmin));
                     return;
                 }
-                dispatchAutoTapAttempts++;
+                int autoAttempt = ++dispatchAutoTapAttempts;
                 dispatchAutoResultMissingFrames = 0;
+                expeditionDispatchSession.recordProgress(now);
+                recordDispatchSelectionDiagnostic(
+                        "tap-requested", "relative-center",
+                        autoAttempt, selectedCount, false,
+                        autoLayout, bitmap, automatic);
                 dispatchActionTap(
                         automatic,
                         getString(R.string.status_reward_selecting_pikmin),
-                        () -> {});
+                        DISPATCH_AUTO_VERIFY_DELAY_MILLIS,
+                        () -> recordDispatchSelectionDiagnostic(
+                                "tap-completed", "gesture",
+                                autoAttempt, selectedCount, false,
+                                autoLayout, bitmap, automatic),
+                        () -> {
+                            recordDispatchSelectionDiagnostic(
+                                    "tap-failed", "gesture",
+                                    autoAttempt, selectedCount, false,
+                                    autoLayout, bitmap, automatic);
+                            stopWithError(getString(R.string.status_reward_gesture_failed));
+                        });
             } else {
                 selectDispatchPikminFromGrid(tokens, bitmap, now);
             }
@@ -1438,12 +3343,11 @@ public final class PetalAccessibilityService extends AccessibilityService {
         dispatchSearchTextConfirmed = false;
         dispatchSearchOpenAttempts = 0;
         dispatchSearchInputAttempts = 0;
-        dispatchKeyboardCloseAttempts = 0;
-        dispatchKeyboardAbsentFrames = 0;
+        dispatchSearchKeyboardGuard.reset();
         dispatchPikminTapIndex = 0;
         dispatchAutoTapAttempts = 0;
         dispatchAutoResultMissingFrames = 0;
-        dispatchAutoControlMissingFrames = 0;
+        dispatchAutoAnchorMissingFrames = 0;
         waitForDispatchFrame(getString(R.string.status_reward_progress, completed, target));
     }
 
@@ -1469,6 +3373,38 @@ public final class PetalAccessibilityService extends AccessibilityService {
         schedule(DISPATCH_SCAN_DELAY_MILLIS);
     }
 
+    private void recordDispatchDetailDiagnostic(
+            String outcome,
+            String reason,
+            String match,
+            int attempt,
+            boolean transitionPending,
+            int bitmapWidth,
+            int bitmapHeight,
+            ExpeditionScreenAnalyzer.Point action) {
+    }
+
+    private void recordFeedNectarSelectionDiagnostic(
+            String outcome,
+            String reason,
+            int scan,
+            int candidateFrames,
+            int missingFrames,
+            boolean nectarCountFound,
+            boolean petalCountFound) {
+    }
+
+    private void recordDispatchSelectionDiagnostic(
+            String outcome,
+            String reason,
+            int attempt,
+            int selectedCount,
+            boolean goVisible,
+            String layout,
+            Bitmap bitmap,
+            ExpeditionScreenAnalyzer.Point point) {
+    }
+
     private void dispatchActionTap(
             ExpeditionScreenAnalyzer.Point point,
             String message,
@@ -1481,6 +3417,20 @@ public final class PetalAccessibilityService extends AccessibilityService {
             String message,
             long nextScanDelayMillis,
             Runnable advance) {
+        dispatchActionTap(
+                point,
+                message,
+                nextScanDelayMillis,
+                advance,
+                () -> stopWithError(getString(R.string.status_reward_gesture_failed)));
+    }
+
+    private void dispatchActionTap(
+            ExpeditionScreenAnalyzer.Point point,
+            String message,
+            long nextScanDelayMillis,
+            Runnable advance,
+            Runnable failure) {
         setStatus(message);
         setRunStatus(
                 AutomationMode.DISPATCH,
@@ -1501,7 +3451,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
                 },
                 () -> {
                     busy = false;
-                    stopWithError(getString(R.string.status_reward_gesture_failed));
+                    failure.run();
                 });
     }
 
@@ -1538,14 +3488,14 @@ public final class PetalAccessibilityService extends AccessibilityService {
                 }
                 ExpeditionScreenAnalyzer.Point search =
                         ExpeditionScreenAnalyzer.findPikminSearchButton(
-                                tokens, bitmap.getWidth(), bitmap.getHeight());
+                                bitmap.getWidth(), bitmap.getHeight(), bitmap::getPixel);
                 if (search == null) {
                     waitForDispatchFrame(getString(R.string.status_reward_search_missing));
                     return;
                 }
                 ExpeditionDispatchSession.Confirmation confirmation =
                         expeditionDispatchSession.confirm(
-                                "PIKMIN_SEARCH:" + search.x() / 24 + ":" + search.y() / 24,
+                                "PIKMIN_SEARCH_CONTROL",
                                 now);
                 if (!handleDispatchConfirmation(confirmation)) {
                     waitForDispatchFrame(getString(R.string.status_reward_selecting_pikmin));
@@ -1586,38 +3536,37 @@ public final class PetalAccessibilityService extends AccessibilityService {
             expeditionDispatchSession.recordProgress(now);
         }
 
-        if (isInputMethodWindowVisible()) {
-            dispatchKeyboardAbsentFrames = 0;
-            if (dispatchKeyboardCloseAttempts >= MAX_ACTION_ATTEMPTS) {
-                stopWithError(getString(R.string.status_reward_keyboard_failed));
-                return;
-            }
-            dispatchKeyboardCloseAttempts++;
-            boolean accepted = performGlobalAction(GLOBAL_ACTION_BACK);
-            if (!accepted && dispatchKeyboardCloseAttempts >= MAX_ACTION_ATTEMPTS) {
+        boolean searchPageConfirmed = dispatchSearchOpened
+                && dispatchSearchTextConfirmed
+                && focusedGameEditableTextMatches(label);
+        SearchKeyboardGuard.Action keyboardAction = observeSearchKeyboard(dispatchSearchKeyboardGuard, label, searchPageConfirmed);
+        if (keyboardAction == SearchKeyboardGuard.Action.SEND_BACK) {
+            if (!sendSearchKeyboardBack(dispatchSearchKeyboardGuard, label, searchPageConfirmed)) {
                 stopWithError(getString(R.string.status_reward_keyboard_failed));
                 return;
             }
             waitForDispatchFrame(getString(R.string.status_reward_selecting_pikmin));
             return;
         }
-
-        dispatchKeyboardAbsentFrames++;
-        if (dispatchKeyboardAbsentFrames < 2) {
+        if (keyboardAction == SearchKeyboardGuard.Action.WAIT) {
             waitForDispatchFrame(getString(R.string.status_reward_selecting_pikmin));
             return;
         }
+        if (keyboardAction != SearchKeyboardGuard.Action.COMPLETE) {
+            stopWithError(getString(R.string.status_reward_keyboard_failed));
+            return;
+        }
+        dispatchSearchKeyboardGuard.reset();
         if (!gameEditableTextMatches(label)) {
             dispatchSearchOpened = false;
             dispatchSearchTextConfirmed = false;
-            dispatchKeyboardAbsentFrames = 0;
+            dispatchSearchKeyboardGuard.reset();
             waitForDispatchFrame(getString(R.string.status_reward_selecting_pikmin));
             return;
         }
         dispatchColorSelected = true;
         expeditionDispatchSession.recordProgress(now);
-        dispatchKeyboardCloseAttempts = 0;
-        dispatchKeyboardAbsentFrames = 0;
+        dispatchSearchKeyboardGuard.reset();
         dispatchPikminTapIndex = 0;
         waitForDispatchFrame(getString(R.string.status_reward_selecting_pikmin));
     }
@@ -1724,7 +3673,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
             PlantingScreenAnalyzer.Detection detection) {
         PlantingFlowPolicy.EntryAction action =
                 PlantingFlowPolicy.entryAction(detection.screen());
-        if (action == PlantingFlowPolicy.EntryAction.BEGIN_POT_SEARCH) {
+        if (action == PlantingFlowPolicy.EntryAction.CONFIRM_PLANTING_MENU) {
             if (!hasStablePlantingMenu()) {
                 setPlantingNoticeText(
                         getString(R.string.status_planting_checking_entry), false);
@@ -1735,10 +3684,17 @@ public final class PetalAccessibilityService extends AccessibilityService {
             plantingMenuStability.reset();
             plantingTransitionFrames = 0;
             actionAttempts = 0;
-            automationStep = AutomationStep.MONITORING;
+            initialPlantingMenuConfirmed = true;
             setPlantingNoticeText(
                     getString(R.string.status_planting_menu_ready), false);
-            schedule(300);
+            beginInitialPlantingFlowerSearch();
+            return;
+        }
+        if (action == PlantingFlowPolicy.EntryAction.STOP_WRONG_SCREEN) {
+            plantingEntryStability.miss();
+            plantingMenuStability.miss();
+            plantingTransitionFrames = 0;
+            stopWithError(getString(R.string.status_planting_wrong_page));
             return;
         }
         PlantingScreenAnalyzer.Point entry = plantingEntryControl(detection);
@@ -1770,6 +3726,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
         plantingTransitionFrames = 0;
         actionAttempts = 0;
         automationStep = AutomationStep.WAITING_INITIAL_PLANTING_MENU;
+        initialPlantingMenuConfirmed = false;
         setPlantingNoticeText(
                 getString(R.string.status_planting_opening_menu), false);
         dispatchPlantingEntryTap(
@@ -1784,7 +3741,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
             PlantingScreenAnalyzer.Detection detection, boolean afterStart) {
         PlantingFlowPolicy.EntryAction entryAction =
                 PlantingFlowPolicy.entryAction(detection.screen());
-        if (entryAction == PlantingFlowPolicy.EntryAction.BEGIN_POT_SEARCH) {
+        if (entryAction == PlantingFlowPolicy.EntryAction.CONFIRM_PLANTING_MENU) {
             if (!hasStablePlantingMenu()) {
                 setStatus(getString(afterStart
                         ? R.string.status_planting_reentering
@@ -1799,10 +3756,10 @@ public final class PetalAccessibilityService extends AccessibilityService {
             if (afterStart) {
                 resumePlantingAfterMenuReturn();
             } else {
-                automationStep = AutomationStep.MONITORING;
+                initialPlantingMenuConfirmed = true;
                 setPlantingNoticeText(
                         getString(R.string.status_planting_menu_ready), false);
-                schedule(300);
+                beginInitialPlantingFlowerSearch();
             }
             return;
         }
@@ -1879,8 +3836,64 @@ public final class PetalAccessibilityService extends AccessibilityService {
             PlantingScreenAnalyzer.Detection detection) {
         return switch (PlantingFlowPolicy.entryAction(detection.screen())) {
             case OPEN_MAP_ENTRY -> detection.mapEntry();
-            case BEGIN_POT_SEARCH, WAIT_FOR_SCREEN -> null;
+            case CONFIRM_PLANTING_MENU, STOP_WRONG_SCREEN -> null;
         };
+    }
+
+    private boolean isPlantingEntryStep() {
+        return automationMode == AutomationMode.PLANTING
+                && (automationStep == AutomationStep.CHECKING_PLANTING_ENTRY
+                        || automationStep == AutomationStep.WAITING_INITIAL_PLANTING_MENU
+                        || automationStep == AutomationStep.WAITING_MENU_AFTER_START);
+    }
+
+    private void logPlantingEntryFrame(
+            OcrScan.Frame frame, PlantingScreenAnalyzer.Detection detection) {
+        PlantingScreenAnalyzer.Point entry = detection.mapEntry();
+        PlantingScreenAnalyzer.Point anchor = detection.entryEvidence().whistleAnchor();
+        Log.i(TAG, "PLANTING_ENTRY stage=" + automationStep.name()
+                + " screen=" + detection.screen().name()
+                + " entrySource=" + detection.entryEvidence().source().name()
+                + " entry=" + (entry == null
+                        ? "none"
+                        : "[" + entry.x() + "," + entry.y() + "]")
+                + " anchor=" + (anchor == null
+                        ? "none"
+                        : "[" + anchor.x() + "," + anchor.y() + "]")
+                + " anchorScore=" + detection.entryEvidence().whistleScore()
+                + " tokenCount=" + frame.tokens().size()
+                + " profile=" + frame.profile().name()
+                + " failureReason=none");
+    }
+
+    private void logPlantingEntryFailure(OcrScan.Profile profile, Exception error) {
+        String message = error == null || error.getMessage() == null
+                ? "unknown"
+                : error.getMessage().replace('\n', ' ').replace('\r', ' ');
+        Log.i(TAG, "PLANTING_ENTRY stage=" + automationStep.name()
+                + " screen=UNAVAILABLE entrySource=NONE entry=none"
+                + " anchor=none anchorScore=-1 tokenCount=0"
+                + " profile=" + profile.name()
+                + " failureReason=" + (error == null
+                        ? "unknown"
+                        : error.getClass().getSimpleName() + ":" + message));
+    }
+
+    private void beginInitialPlantingFlowerSearch() {
+        if (!initialPlantingMenuConfirmed) {
+            returnToInitialPlantingEntry();
+            return;
+        }
+        beginPlantingFlowerSearch(settings.allowedFlowers().get(0), 0, true);
+    }
+
+    private void returnToInitialPlantingEntry() {
+        initialPlantingMenuConfirmed = false;
+        resetPlantingNavigation();
+        automationStep = AutomationStep.CHECKING_PLANTING_ENTRY;
+        setPlantingNoticeText(
+                getString(R.string.status_planting_checking_entry), false);
+        scheduleNext();
     }
 
     /** 判斷目前是否正在執行自動種花的搜尋框子流程。 */
@@ -1901,7 +3914,12 @@ public final class PetalAccessibilityService extends AccessibilityService {
             stopWithError(getString(R.string.status_flower_search_invalid_name));
             return;
         }
+        if (!isPlantingSearchStep()) {
+            plantingSkippedFlowers.clear();
+        }
         targetFlower = PetalCatalog.canonicalName(flower);
+        targetCount = -1;
+        plantingSkippedLast = false;
         resetPlantingSearch();
         plantingSearchMinimumCount = Math.max(0, minimumCount);
         startAfterSelection = startAfter;
@@ -1914,12 +3932,15 @@ public final class PetalAccessibilityService extends AccessibilityService {
                 OverlayRunStatus.Kind.SEARCHING,
                 getString(R.string.overlay_planting_searching, targetFlower),
                 query);
+        logPlantingSwitch("search-begin", false);
         schedule(POSTCARD_FAST_SCAN_DELAY_MILLIS);
     }
 
     /** 依搜尋子狀態開啟欄位、輸入、關閉鍵盤及辨識完整目標花盆。 */
     private void handlePlantingFlowerSearch(
             List<PetalMatcher.Token> tokens, Bitmap bitmap, OcrScan.Frame frame) {
+        logPlantingSwitch("search-frame", CardHighlight.isPetalSearchOpen(
+                bitmap.getWidth(), bitmap.getHeight(), bitmap::getPixel));
         if (automationStep == AutomationStep.REVEALING_SEARCH_PANEL) {
             revealPlantingSearchPanel();
             return;
@@ -1928,12 +3949,16 @@ public final class PetalAccessibilityService extends AccessibilityService {
             openPlantingFlowerSearch(bitmap);
             return;
         }
+        if (automationStep == AutomationStep.CLEARING_SEARCH) {
+            clearPlantingSearchForNextFlower(bitmap);
+            return;
+        }
         if (automationStep == AutomationStep.ENTERING_SEARCH) {
             enterPlantingFlowerSearch();
             return;
         }
         if (automationStep == AutomationStep.CLOSING_SEARCH_KEYBOARD) {
-            closePlantingSearchKeyboard();
+            closePlantingSearchKeyboard(bitmap);
             return;
         }
         if (automationStep == AutomationStep.CLOSING_SEARCH_AFTER_SELECTION) {
@@ -1949,17 +3974,32 @@ public final class PetalAccessibilityService extends AccessibilityService {
             return;
         }
 
-        PetalMatcher.Selection pot = PetalMatcher.findSearchedFlower(
-                tokens,
-                targetFlower,
-                plantingSearchMinimumCount,
-                bitmap.getWidth(),
-                bitmap.getHeight());
+        int searchResultsTop = plantingSearchResultsTop(bitmap);
+        PetalMatcher.Selection pot = searchResultsTop < 0
+                ? null
+                : PetalMatcher.findSearchedFlower(
+                        tokens,
+                        targetFlower,
+                        plantingSearchMinimumCount,
+                        bitmap.getWidth(),
+                        bitmap.getHeight(),
+                        searchResultsTop);
         if (pot == null) {
-            scanFocusedPlantingPetalRegion(bitmap);
+            handlePlantingSearchMiss();
             return;
         }
         confirmPlantingSearchResult(pot, bitmap.getWidth(), bitmap.getHeight());
+    }
+
+    /** 以展開搜尋框的實際中心推算底緣，花盆名稱只在其下方判斷。 */
+    private int plantingSearchResultsTop(Bitmap bitmap) {
+        CardHighlight.Point search = CardHighlight.findPetalSearchCloseButton(
+                bitmap.getWidth(), bitmap.getHeight(), bitmap::getPixel);
+        return search == null
+                ? -1
+                : Math.min(
+                        bitmap.getHeight() - 1,
+                        search.y() + Math.round(bitmap.getHeight() * 0.03f));
     }
 
     /** 依目前遊戲視窗尺寸上拉 20%，再沿用既有花盆名稱搜尋流程。 */
@@ -1996,7 +4036,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
             schedule(POSTCARD_FAST_SCAN_DELAY_MILLIS);
             return;
         }
-        CardHighlight.Point search = CardHighlight.findPetalSearchButton(
+        CardHighlight.Point search = CardHighlight.findPlantingPetalSearchButton(
                 width, height, bitmap::getPixel);
         if (search == null || ++actionAttempts > MAX_ACTION_ATTEMPTS) {
             stopWithError(getString(R.string.status_flower_search_open_failed));
@@ -2033,43 +4073,74 @@ public final class PetalAccessibilityService extends AccessibilityService {
             return;
         }
         plantingSearchInputAttempts = 0;
-        plantingKeyboardCloseAttempts = 0;
-        plantingKeyboardAbsentFrames = 0;
+        plantingSearchKeyboardGuard.reset();
         automationStep = AutomationStep.CLOSING_SEARCH_KEYBOARD;
         setStatus(getString(R.string.status_flower_search_closing_keyboard));
         schedule(POSTCARD_FAST_SCAN_DELAY_MILLIS);
     }
 
     /** 以輸入法視窗狀態關閉鍵盤，避免依賴 Sony、三星或 Gboard 的按鍵位置。 */
-    private void closePlantingSearchKeyboard() {
-        if (!isInputMethodWindowVisible()) {
-            plantingKeyboardAbsentFrames++;
-            if (plantingKeyboardAbsentFrames < 2) {
-                setStatus(getString(R.string.status_flower_search_waiting_keyboard));
-                schedule(POSTCARD_FAST_SCAN_DELAY_MILLIS);
+    private void closePlantingSearchKeyboard(Bitmap bitmap) {
+        String query = PetalCatalog.searchQuery(targetFlower);
+        boolean searchPageConfirmed = CardHighlight.isPetalSearchOpen(
+                bitmap.getWidth(), bitmap.getHeight(), bitmap::getPixel)
+                && gameEditableTextMatches(query);
+        SearchKeyboardGuard.Action action = observeSearchKeyboard(plantingSearchKeyboardGuard, query, searchPageConfirmed);
+        if (action == SearchKeyboardGuard.Action.COMPLETE) {
+            plantingSearchKeyboardGuard.reset();
+            scrollPlantingSearchResults(0);
+            return;
+        }
+        if (action == SearchKeyboardGuard.Action.SEND_BACK) {
+            if (!sendSearchKeyboardBack(plantingSearchKeyboardGuard, query, searchPageConfirmed)) {
+                stopWithError(getString(R.string.status_flower_search_keyboard_failed));
                 return;
             }
-            plantingKeyboardCloseAttempts = 0;
-            plantingKeyboardAbsentFrames = 0;
+            setStatus(getString(R.string.status_flower_search_closing_keyboard));
+            schedule(600);
+            return;
+        }
+        if (action == SearchKeyboardGuard.Action.WAIT) {
+            setStatus(getString(R.string.status_flower_search_waiting_keyboard));
+            schedule(POSTCARD_FAST_SCAN_DELAY_MILLIS);
+            return;
+        }
+        stopWithError(getString(R.string.status_flower_search_keyboard_failed));
+    }
+
+    /** 搜尋文字確認後，基礎花盆直接判斷，其餘上滑三次再進入花盆 OCR。 */
+    private void scrollPlantingSearchResults(int completedScrolls) {
+        if (completedScrolls >= PetalMatcher.plantingSearchScrollCount(targetFlower)) {
+            busy = false;
             automationStep = AutomationStep.SELECTING_SEARCH_RESULT;
             setStatus(getString(R.string.status_flower_search_keyboard_closed));
-            schedule(700);
+            schedule(POSTCARD_FAST_SCAN_DELAY_MILLIS);
             return;
         }
-
-        plantingKeyboardAbsentFrames = 0;
-        if (plantingKeyboardCloseAttempts >= MAX_ACTION_ATTEMPTS) {
-            stopWithError(getString(R.string.status_flower_search_keyboard_failed));
+        Rect bounds = activeGameBoundsStrict();
+        if (bounds == null) {
+            busy = false;
+            stopWithError(getString(R.string.status_flower_search_scroll_failed));
             return;
         }
-        plantingKeyboardCloseAttempts++;
-        boolean accepted = performGlobalAction(GLOBAL_ACTION_BACK);
-        if (!accepted && plantingKeyboardCloseAttempts >= MAX_ACTION_ATTEMPTS) {
-            stopWithError(getString(R.string.status_flower_search_keyboard_failed));
-            return;
-        }
-        setStatus(getString(R.string.status_flower_search_closing_keyboard));
-        schedule(600);
+        PetalMatcher.SearchResultScroll scroll = PetalMatcher.plantingSearchResultScroll(
+                bounds.width(), bounds.height());
+        Path path = new Path();
+        path.moveTo(bounds.left + scroll.startX(), bounds.top + scroll.startY());
+        path.lineTo(bounds.left + scroll.endX(), bounds.top + scroll.endY());
+        busy = true;
+        setStatus(getString(
+                R.string.status_flower_search_scrolling_results,
+                completedScrolls + 1,
+                PetalMatcher.PLANTING_SEARCH_SCROLL_COUNT));
+        dispatchPath(
+                path,
+                FEED_DRAG_MILLIS,
+                () -> scrollPlantingSearchResults(completedScrolls + 1),
+                () -> {
+                    busy = false;
+                    stopWithError(getString(R.string.status_flower_search_scroll_failed));
+                });
     }
 
     /**
@@ -2087,28 +4158,30 @@ public final class PetalAccessibilityService extends AccessibilityService {
     private void scanFocusedPlantingPetalRegion(Bitmap bitmap, boolean monitorRead) {
         int width = bitmap.getWidth();
         int height = bitmap.getHeight();
+        int searchResultsTop = monitorRead ? -1 : plantingSearchResultsTop(bitmap);
+        OcrScan.Profile profile = monitorRead
+                ? OcrScan.Profile.DISPATCH_LIST
+                : OcrScan.Profile.PLANTING_SEARCH_RESULTS;
         CaptureGeometry captureGeometry = currentCaptureGeometry();
         long generation = runGeneration;
         String scanTarget = monitorRead ? currentFlower : targetFlower;
-        busy = true;
         setRunStatus(
                 AutomationMode.PLANTING,
                 OverlayRunStatus.Kind.RECOGNIZING,
                 getString(R.string.status_flower_search_focused_ocr),
                 scanTarget);
-        scanner.scan(
+        startOcrTransaction(
                 bitmap,
-                OcrScan.Profile.PETAL_LIST,
+                profile,
                 captureGeometry,
-                getMainExecutor(),
-                new OcrScanner.FrameCallback() {
-            @Override
-            public void onSuccess(OcrScan.Frame frame) {
+                "planting-focused",
+                false,
+                frame -> {
                 runWithCaptureGeometry(frame.captureGeometry(), () -> {
                 if (!isActiveRun(generation)) {
                     return;
                 }
-                busy = false;
+                recordOcrDiagnostic("planting-focused", frame);
                 if (monitorRead) {
                     if (automationStep != AutomationStep.MONITORING
                             || !scanTarget.equals(currentFlower)) {
@@ -2130,24 +4203,26 @@ public final class PetalAccessibilityService extends AccessibilityService {
                     schedule(POSTCARD_VERIFY_DELAY_MILLIS);
                     return;
                 }
-                PetalMatcher.Selection pot = PetalMatcher.findSearchedFlower(
-                        frame.tokens(),
-                        targetFlower,
-                        plantingSearchMinimumCount,
-                        width,
-                        height);
+                PetalMatcher.Selection pot = searchResultsTop < 0
+                        ? null
+                        : PetalMatcher.findSearchedFlower(
+                                frame.tokens(),
+                                targetFlower,
+                                plantingSearchMinimumCount,
+                                width,
+                                height,
+                                searchResultsTop);
                 if (pot == null) {
                     handlePlantingSearchMiss();
                 } else {
                     confirmPlantingSearchResult(pot, width, height);
                 }
                 });
-            }
-
-            @Override
-            public void onFailure(Exception error) {
+                },
+                error -> {
                 if (isActiveRun(generation)) {
-                    busy = false;
+                    recordOcrDiagnosticFailure(
+                            "planting-focused", profile, captureGeometry, error);
                     if (monitorRead) {
                         setPlantingNoticeText(
                                 getString(R.string.overlay_planting_unreadable, scanTarget), false);
@@ -2156,8 +4231,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
                         handlePlantingSearchMiss();
                     }
                 }
-            }
-        });
+                });
     }
 
     /** 限制搜尋結果等待次數，避免搜尋不到時無限循環。 */
@@ -2175,7 +4249,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
                 OverlayRunStatus.Kind.RECOGNIZING,
                 getString(R.string.status_flower_search_waiting_result),
                 PetalCatalog.searchQuery(targetFlower));
-        schedule(700);
+        schedule(POSTCARD_FAST_SCAN_DELAY_MILLIS);
     }
 
     /** 要求同一個完整目標結果連續出現兩幀，再交給花盆點擊後確認。 */
@@ -2195,6 +4269,36 @@ public final class PetalAccessibilityService extends AccessibilityService {
                             plantingPotStability.confirmations(),
                             2),
                     getString(R.string.overlay_ocr_detail));
+            schedule(POSTCARD_FAST_SCAN_DELAY_MILLIS);
+            return;
+        }
+        targetCount = pot.count();
+        logPlantingSwitch("candidate-confirmed", true);
+        if (PlantingFlowPolicy.shouldSkipCandidate(targetCount, settings.threshold())) {
+            if (!plantingSkippedFlowers.add(targetFlower)) {
+                stopWithError(getString(R.string.status_flower_search_result_missing,
+                        PetalCatalog.searchQuery(targetFlower)));
+                return;
+            }
+            PlantingFlowPolicy.LowCountDecision next =
+                    PlantingFlowPolicy.afterConfirmedLowCount(settings.allowedFlowers(), targetFlower);
+            plantingSkippedLast = next.action() == PlantingFlowPolicy.LowCountAction.STOP_PLANTING;
+            String message = getString(R.string.status_planting_skipped_flower,
+                    targetFlower, targetCount, settings.threshold());
+            setStatus(message);
+            setRunStatus(AutomationMode.PLANTING, OverlayRunStatus.Kind.SEARCHING, message, "");
+            logPlantingSwitch("skip-low-count", true);
+            if (next.nextFlower() != null) {
+                targetFlower = next.nextFlower();
+                targetCount = -1;
+                resetPlantingSearch();
+                automationStep = AutomationStep.CLEARING_SEARCH;
+                logPlantingSwitch("search-clear-before-next", true);
+                schedule(700);
+                return;
+            }
+            plantingSearchCloseGuard.reset();
+            automationStep = AutomationStep.CLOSING_SEARCH_AFTER_SELECTION;
             schedule(700);
             return;
         }
@@ -2203,14 +4307,40 @@ public final class PetalAccessibilityService extends AccessibilityService {
         tapFlower(pot, shouldStart, true);
     }
 
+    /** 低於門檻時先以搜尋框 X 清空結果，再重新開啟完整搜尋流程。 */
+    private void clearPlantingSearchForNextFlower(Bitmap bitmap) {
+        if (!CardHighlight.isPetalSearchOpen(
+                bitmap.getWidth(), bitmap.getHeight(), bitmap::getPixel)) {
+            automationStep = AutomationStep.OPENING_SEARCH;
+            schedule(POSTCARD_FAST_SCAN_DELAY_MILLIS);
+            return;
+        }
+        CardHighlight.Point clear = CardHighlight.findPetalSearchCloseButton(
+                bitmap.getWidth(), bitmap.getHeight(), bitmap::getPixel);
+        if (clear == null) {
+            stopWithError(getString(R.string.status_flower_search_input_failed));
+            return;
+        }
+        dispatchTap(
+                clear.x(),
+                clear.y(),
+                GAME_ACTION_TAP_DURATION_MILLIS,
+                () -> {
+                    automationStep = AutomationStep.OPENING_SEARCH;
+                    logPlantingSwitch("search-cleared-next", false);
+                    schedule(700);
+                },
+                () -> stopWithError(getString(R.string.status_flower_search_input_failed)));
+    }
+
     /** 清除自動種花搜尋流程的暫存，不修改目前設定中的目標花名。 */
     private void resetPlantingSearch() {
         plantingPotStability.reset();
         plantingSearchMissingFrames = 0;
         plantingSearchInputAttempts = 0;
-        plantingKeyboardCloseAttempts = 0;
-        plantingKeyboardAbsentFrames = 0;
+        plantingSearchKeyboardGuard.reset();
         plantingSearchMinimumCount = 0;
+        plantingSearchCloseGuard.reset();
     }
 
     private void resetPlantingNavigation() {
@@ -2220,7 +4350,6 @@ public final class PetalAccessibilityService extends AccessibilityService {
         plantingTransitionFrames = 0;
         plantingMonitorMissingFrames = 0;
         stopMissingConfirmations = 0;
-        plantingStartTapped = false;
     }
 
     /** 點擊已確認花盆，並等待精確名稱或同一卡片高亮背景確認選取結果。 */
@@ -2235,6 +4364,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
         actionAttempts = 0;
         automationStep = AutomationStep.VERIFYING_SELECTION;
         switchGuard.requestSwitch(selection.name());
+        logPlantingSwitch("selection-tap", searchedSelection);
         setStatus(getString(R.string.status_confirming_selection, selection.name()));
         setRunStatus(
                 AutomationMode.PLANTING,
@@ -2274,12 +4404,14 @@ public final class PetalAccessibilityService extends AccessibilityService {
             currentFlower = confirmedName;
             targetCount = confirmedCount;
             showPlantingStatus(confirmedName, confirmedCount);
+            logPlantingSwitch("selection-confirmed", selectionFromSearch);
             actionAttempts = 0;
             boolean shouldCloseSearch = selectionFromSearch;
             selectionFromSearch = false;
             targetSelectionX = 0;
             targetSelectionY = 0;
             if (shouldCloseSearch) {
+                plantingSearchCloseGuard.reset();
                 automationStep = AutomationStep.CLOSING_SEARCH_AFTER_SELECTION;
                 setStatus(getString(R.string.status_flower_search_closing_after_selection));
                 schedule(POSTCARD_FAST_SCAN_DELAY_MILLIS);
@@ -2298,38 +4430,34 @@ public final class PetalAccessibilityService extends AccessibilityService {
 
     /** 點擊搜尋欄右側 X，並等待搜尋欄與輸入法視窗都消失後才繼續。 */
     private void closePlantingSearchAfterSelection(Bitmap bitmap) {
+        boolean foreground = activeGameBoundsStrict() != null;
+        boolean imeVisible = isInputMethodWindowVisible();
         CardHighlight.Point close = CardHighlight.findPetalSearchCloseButton(
                 bitmap.getWidth(), bitmap.getHeight(), bitmap::getPixel);
-        if (close != null) {
-            if (++actionAttempts > MAX_ACTION_ATTEMPTS) {
-                stopWithError(getString(R.string.status_flower_search_close_failed));
-                return;
-            }
-            dispatchTap(
-                    close.x(),
-                    close.y(),
-                    GAME_ACTION_TAP_DURATION_MILLIS,
+        boolean closedMenu = close == null
+                && CardHighlight.findPlantingMenuControls(
+                        bitmap.getWidth(), bitmap.getHeight(), bitmap::getPixel) != null
+                && CardHighlight.findPlantingPetalSearchButton(
+                        bitmap.getWidth(), bitmap.getHeight(), bitmap::getPixel) != null;
+        PlantingSearchCloseGuard.Action action = plantingSearchCloseGuard.observe(
+                foreground, imeVisible, close != null, closedMenu);
+        logPlantingSwitch("close-search-" + action, close != null);
+        switch (action) {
+            case TAP_CLOSE -> dispatchTap(close.x(), close.y(), GAME_ACTION_TAP_DURATION_MILLIS,
                     () -> schedule(600),
                     () -> stopWithError(getString(R.string.status_flower_search_close_failed)));
-            return;
-        }
-        actionAttempts = 0;
-        if (isInputMethodWindowVisible()) {
-            if (plantingKeyboardCloseAttempts >= MAX_ACTION_ATTEMPTS) {
-                stopWithError(getString(R.string.status_flower_search_close_failed));
-                return;
+            case WAIT -> schedule(600);
+            case FAIL -> stopWithError(getString(R.string.status_flower_search_close_failed));
+            case COMPLETE -> {
+                plantingSearchCloseGuard.reset();
+                if (plantingSkippedLast) {
+                    plantingSkippedLast = false;
+                    beginFinalPlantingStop();
+                } else {
+                    continueAfterConfirmedFlowerSelection();
+                }
             }
-            plantingKeyboardCloseAttempts++;
-            boolean accepted = performGlobalAction(GLOBAL_ACTION_BACK);
-            if (!accepted && plantingKeyboardCloseAttempts >= MAX_ACTION_ATTEMPTS) {
-                stopWithError(getString(R.string.status_flower_search_close_failed));
-                return;
-            }
-            schedule(600);
-            return;
         }
-        plantingKeyboardCloseAttempts = 0;
-        continueAfterConfirmedFlowerSelection();
     }
 
     /** 搜尋介面清理完成後，接回既有的開始種花或監控流程。 */
@@ -2412,7 +4540,6 @@ public final class PetalAccessibilityService extends AccessibilityService {
         automationStep = AutomationStep.VERIFYING_START;
         actionAttempts = 0;
         resetPlantingNavigation();
-        plantingStartTapped = true;
     }
 
     /** 開始鍵點擊後確認種花面板、地圖入口或地圖上的啟動證據。 */
@@ -2538,27 +4665,20 @@ public final class PetalAccessibilityService extends AccessibilityService {
         setStatus(getString(newlyStarted
                 ? R.string.status_planting_started
                 : R.string.status_planting_already_active, currentFlower));
-        recordPlantingStartIfNeeded(newlyStarted);
         resetPlantingNavigation();
         scheduleNext();
     }
 
     /** 返回種花面板後，再搜尋一次當前花盆，讓數量卡回到可監控位置。 */
     private void resumePlantingAfterMenuReturn() {
-        recordPlantingStartIfNeeded(true);
         startAfterSelection = false;
         actionAttempts = 0;
         resetPlantingNavigation();
         if (currentFlower.isEmpty()) {
-            automationStep = AutomationStep.MONITORING;
-            scheduleNext();
+            returnToInitialPlantingEntry();
             return;
         }
         beginPlantingFlowerSearch(currentFlower, 0, false);
-    }
-
-    private void recordPlantingStartIfNeeded(boolean newlyStarted) {
-        plantingStartTapped = false;
     }
 
     /** 最後順位低於門檻後，轉入遊戲內停止鍵流程。 */
@@ -2837,8 +4957,53 @@ public final class PetalAccessibilityService extends AccessibilityService {
             return;
         }
 
-        ReturnRewardDetector.Target rewardTarget = ReturnRewardDetector.find(
-                width, height, bitmap::getPixel);
+        ReturnRewardDetector.Region rewardRegion =
+                returnRewardRoi.detectorRegion(currentCaptureGeometry());
+        if (rewardRegion == null) {
+            stopWithError(getString(R.string.status_return_reward_roi_failed));
+            return;
+        }
+        ReturnRewardDetector.Target detectedRewardTarget = ReturnRewardDetector.find(
+                width, height, bitmap::getPixel, rewardRegion);
+        boolean pikminDetailOpen = FeedScreenAnalyzer.isPikminDetailOpen(tokens);
+        ReturnRewardDetector.SquadCloseup squadCloseup =
+                ReturnRewardDetector.classifySquadCloseup(
+                        width, height, bitmap::getPixel);
+        boolean squadCloseupConfirmed = pikminDetailOpen
+                || squadCloseup == ReturnRewardDetector.SquadCloseup.SQUAD_CLOSEUP;
+        boolean squadCloseupUnknown = !pikminDetailOpen
+                && squadCloseup == ReturnRewardDetector.SquadCloseup.UNKNOWN;
+        ReturnRewardDetector.Target rewardTarget = squadCloseupConfirmed
+                || squadCloseupUnknown
+                ? null : detectedRewardTarget;
+
+        boolean nectarWarningVisible = ReturnRewardDetector.hasNectarCapacityWarning(
+                tokens, width, height);
+        if (nectarWarningVisible) {
+            returnRewardNectarWarningFrames++;
+        } else {
+            returnRewardNectarWarningFrames = 0;
+            returnRewardNectarWarningActive = false;
+        }
+        boolean nectarWarningConfirmed = returnRewardNectarWarningFrames
+                >= RETURN_REWARD_REQUIRED_WARNING_FRAMES;
+        if (nectarWarningConfirmed && !returnRewardNectarWarningActive) {
+            returnRewardNectarWarningActive = true;
+            if (!returnRewardContinueOnNectarWarning) {
+                stopWithError(getString(
+                        R.string.status_return_reward_nectar_warning_stopped));
+                return;
+            }
+            setReturnRewardStatus(getString(
+                    R.string.status_return_reward_nectar_warning_continuing));
+        }
+        if (nectarWarningVisible && rewardTarget == null) {
+            setReturnRewardStatus(getString(nectarWarningConfirmed
+                    ? R.string.status_return_reward_nectar_warning_continuing
+                    : R.string.status_return_reward_waiting));
+            schedule(RETURN_REWARD_SCAN_DELAY_MILLIS);
+            return;
+        }
 
         if (returnRewardWaitingPostcardExit) {
             resetReturnRewardPostcard();
@@ -2857,14 +5022,21 @@ public final class PetalAccessibilityService extends AccessibilityService {
         }
         boolean persistentTargetRearmEligible = returnRewardLastTapAt > 0
                 && sinceTap >= RETURN_REWARD_PERSISTENT_TARGET_REARM_MILLIS;
+        PostcardMatcher.Page guardPage = squadCloseupUnknown
+                ? PostcardMatcher.Page.UNKNOWN : postcardPage;
         ReturnRewardScanGuard.Decision decision = returnRewardScanGuard.observe(
-                postcardPage,
+                guardPage,
                 rewardTarget,
                 width,
                 height,
-                persistentTargetRearmEligible);
+                persistentTargetRearmEligible,
+                squadCloseupConfirmed);
         if (decision == ReturnRewardScanGuard.Decision.TARGET_CONFIRMED) {
             handleReturnRewardTarget(rewardTarget, width, height);
+            return;
+        }
+        if (decision == ReturnRewardScanGuard.Decision.SQUAD_COMPLETE) {
+            finishWithSuccess(getString(R.string.status_return_reward_complete));
             return;
         }
         if (decision == ReturnRewardScanGuard.Decision.COMPLETE) {
@@ -3179,7 +5351,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
             return;
         }
         if (postcardAutomation.step() == PostcardAutomation.Step.CLOSE_PETAL_KEYBOARD) {
-            closePostcardKeyboard();
+            closePostcardKeyboard(bitmap);
             return;
         }
         if (postcardAutomation.step() == PostcardAutomation.Step.TAP_NEXT) {
@@ -3270,8 +5442,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
             return;
         }
         postcardPetalInputAttempts = 0;
-        postcardKeyboardCloseAttempts = 0;
-        postcardKeyboardAbsentFrames = 0;
+        postcardSearchKeyboardGuard.reset();
         postcardAutomation.moveTo(PostcardAutomation.Step.CLOSE_PETAL_KEYBOARD);
         setPostcardStatus(getString(R.string.status_postcard_closing_keyboard));
         schedule(POSTCARD_FAST_SCAN_DELAY_MILLIS);
@@ -3282,35 +5453,118 @@ public final class PetalAccessibilityService extends AccessibilityService {
      * 只有在 TYPE_INPUT_METHOD 確實存在時才送出系統返回，並要求連續兩幀看不到鍵盤後
      * 才進入花盆辨識，避免鍵盤動畫或視窗事件延遲造成過早 OCR。
      */
-    private void closePostcardKeyboard() {
-        if (!isInputMethodWindowVisible()) {
-            postcardKeyboardAbsentFrames++;
-            if (postcardKeyboardAbsentFrames < 2) {
-                setPostcardStatus(getString(R.string.status_postcard_waiting_keyboard_close));
-                schedule(POSTCARD_FAST_SCAN_DELAY_MILLIS);
-                return;
-            }
-            postcardKeyboardCloseAttempts = 0;
-            postcardKeyboardAbsentFrames = 0;
+    private void closePostcardKeyboard(Bitmap bitmap) {
+        String query = PostcardPotCatalog.searchQuery(postcardAutomation.petalPotName());
+        boolean searchPageConfirmed = CardHighlight.isPetalSearchOpen(
+                bitmap.getWidth(), bitmap.getHeight(), bitmap::getPixel)
+                && gameEditableTextMatches(query);
+        SearchKeyboardGuard.Action action = observeSearchKeyboard(postcardSearchKeyboardGuard, query, searchPageConfirmed);
+        if (action == SearchKeyboardGuard.Action.COMPLETE) {
+            postcardSearchKeyboardGuard.reset();
             postcardAutomation.moveTo(PostcardAutomation.Step.SELECT_PETAL);
             setPostcardStatus(getString(R.string.status_postcard_keyboard_closed));
             schedule(700);
             return;
         }
+        if (action == SearchKeyboardGuard.Action.SEND_BACK) {
+            if (!sendSearchKeyboardBack(postcardSearchKeyboardGuard, query, searchPageConfirmed)) {
+                stopWithError(getString(R.string.status_postcard_keyboard_close_failed));
+                return;
+            }
+            setPostcardStatus(getString(R.string.status_postcard_closing_keyboard));
+            schedule(600);
+            return;
+        }
+        if (action == SearchKeyboardGuard.Action.WAIT) {
+            setPostcardStatus(getString(R.string.status_postcard_waiting_keyboard_close));
+            schedule(POSTCARD_FAST_SCAN_DELAY_MILLIS);
+            return;
+        }
+        stopWithError(getString(R.string.status_postcard_keyboard_close_failed));
+    }
 
-        postcardKeyboardAbsentFrames = 0;
-        if (postcardKeyboardCloseAttempts >= MAX_ACTION_ATTEMPTS) {
-            stopWithError(getString(R.string.status_postcard_keyboard_close_failed));
-            return;
+    /**
+     * Accessibility exposes no direct IME-to-editor binding. Require the game's focused
+     * editor/window and a nonempty IME on the same display above that window.
+     */
+    private SearchKeyboardGuard.Evidence searchKeyboardEvidence(
+            String query, boolean searchPageConfirmed) {
+        AccessibilityNodeInfo editor = findFocusedGameEditableText();
+        boolean focused = editor != null && editableTextMatches(editor, query);
+        boolean foreground = activeGameBoundsStrict() != null;
+        boolean imeVisible = false;
+        boolean associated = false;
+        String identity = "";
+        List<AccessibilityWindowInfo> windows = getWindows();
+        AccessibilityWindowInfo gameWindow = null;
+        if (windows != null && focused) {
+            for (AccessibilityWindowInfo window : windows) {
+                if (window != null && window.getId() == editor.getWindowId()
+                        && window.isFocused()
+                        && window.getType() == AccessibilityWindowInfo.TYPE_APPLICATION) {
+                    gameWindow = window;
+                    break;
+                }
+            }
         }
-        postcardKeyboardCloseAttempts++;
-        boolean accepted = performGlobalAction(GLOBAL_ACTION_BACK);
-        if (!accepted && postcardKeyboardCloseAttempts >= MAX_ACTION_ATTEMPTS) {
-            stopWithError(getString(R.string.status_postcard_keyboard_close_failed));
-            return;
+        if (windows != null) {
+            for (AccessibilityWindowInfo window : windows) {
+                if (window == null || window.getType() != AccessibilityWindowInfo.TYPE_INPUT_METHOD) {
+                    continue;
+                }
+                Rect imeBounds = new Rect();
+                window.getBoundsInScreen(imeBounds);
+                if (imeBounds.isEmpty()) {
+                    continue;
+                }
+                imeVisible = true;
+                if (gameWindow != null && window.getDisplayId() == gameWindow.getDisplayId()
+                        && window.getLayer() > gameWindow.getLayer()) {
+                    associated = true;
+                    identity = editor.getWindowId() + ":" + editor.hashCode() + ":"
+                            + window.getId() + ":"
+                            + editor.getViewIdResourceName() + ":" + PetalMatcher.normalize(query);
+                }
+            }
         }
-        setPostcardStatus(getString(R.string.status_postcard_closing_keyboard));
-        schedule(600);
+        return new SearchKeyboardGuard.Evidence(
+                foreground, imeVisible, searchPageConfirmed, focused, associated, identity);
+    }
+
+    private SearchKeyboardGuard.Action observeSearchKeyboard(
+            SearchKeyboardGuard guard, String query, boolean searchPageConfirmed) {
+        SearchKeyboardGuard.Evidence evidence = searchKeyboardEvidence(query, searchPageConfirmed);
+        SearchKeyboardGuard.Action action = guard.observe(evidence);
+        Log.i(TAG, "SEARCH_KEYBOARD mode=" + automationMode + " event=observe action=" + action
+                + " imeVisible=" + evidence.inputMethodVisible()
+                + " searchPageConfirmed=" + evidence.searchPageConfirmed()
+                + " focusedInput=" + evidence.focusedSearchInput()
+                + " imeAssociated=" + evidence.imeAssociated());
+        return action;
+    }
+
+    private boolean sendSearchKeyboardBack(
+            SearchKeyboardGuard guard, String query, boolean searchPageConfirmed) {
+        SearchKeyboardGuard.Evidence fresh = searchKeyboardEvidence(query, searchPageConfirmed);
+        boolean permitted = guard.permitsDispatch(fresh);
+        Log.i(TAG, "SEARCH_KEYBOARD mode=" + automationMode
+                + " event=back-check permitted=" + permitted
+                + " imeVisible=" + fresh.inputMethodVisible()
+                + " searchPageConfirmed=" + fresh.searchPageConfirmed()
+                + " focusedInput=" + fresh.focusedSearchInput()
+                + " imeAssociated=" + fresh.imeAssociated());
+        if (automationMode == AutomationMode.PLANTING) {
+            logPlantingSwitch("keyboard-back-check", searchPageConfirmed);
+        }
+        return permitted && performGlobalAction(GLOBAL_ACTION_BACK);
+    }
+
+    private void logPlantingSwitch(String event, boolean searchPageConfirmed) {
+        Log.i(TAG, "PLANTING_SWITCH event=" + event
+                + " currentFlower=" + currentFlower + " targetFlower=" + targetFlower
+                + " targetCount=" + targetCount + " automationStep=" + automationStep
+                + " imeVisible=" + isInputMethodWindowVisible()
+                + " searchPageConfirmed=" + searchPageConfirmed);
     }
 
     /** 讀取互動視窗清單，跨 Gboard、三星、小米等輸入法判斷軟鍵盤是否仍顯示。 */
@@ -3416,24 +5670,22 @@ public final class PetalAccessibilityService extends AccessibilityService {
         int height = bitmap.getHeight();
         CaptureGeometry captureGeometry = currentCaptureGeometry();
         long generation = runGeneration;
-        busy = true;
         setPostcardStatus(
                 OverlayRunStatus.Kind.RECOGNIZING,
                 getString(R.string.status_postcard_focused_petal_ocr),
                 postcardAutomation.petalPotName());
-        scanner.scan(
+        startOcrTransaction(
                 bitmap,
                 OcrScan.Profile.PETAL_LIST,
                 captureGeometry,
-                getMainExecutor(),
-                new OcrScanner.FrameCallback() {
-            @Override
-            public void onSuccess(OcrScan.Frame frame) {
+                "postcard-focused",
+                false,
+                frame -> {
                 runWithCaptureGeometry(frame.captureGeometry(), () -> {
                 if (!isActiveRun(generation)) {
                     return;
                 }
-                busy = false;
+                recordOcrDiagnostic("postcard-focused", frame);
                 if (postcardAutomation.step() != PostcardAutomation.Step.SELECT_PETAL) {
                     schedule(POSTCARD_VERIFY_DELAY_MILLIS);
                     return;
@@ -3451,16 +5703,14 @@ public final class PetalAccessibilityService extends AccessibilityService {
                     confirmPostcardPetalPot(focusedPot, width, height);
                 }
                 });
-            }
-
-            @Override
-            public void onFailure(Exception error) {
+                },
+                error -> {
                 if (isActiveRun(generation)) {
-                    busy = false;
+                    recordOcrDiagnosticFailure(
+                            "postcard-focused", OcrScan.Profile.PETAL_LIST, captureGeometry, error);
                     handleFocusedPetalMiss();
                 }
-            }
-        });
+                });
     }
 
     private void handleFocusedPetalMiss() {
@@ -3533,8 +5783,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
     private void resetPostcardPetalSearch() {
         postcardPetalSearchMissingFrames = 0;
         postcardPetalInputAttempts = 0;
-        postcardKeyboardCloseAttempts = 0;
-        postcardKeyboardAbsentFrames = 0;
+        postcardSearchKeyboardGuard.reset();
     }
 
     private void handlePikminSelection(
@@ -3824,6 +6073,41 @@ public final class PetalAccessibilityService extends AccessibilityService {
         }
     }
 
+    /** Sends a point already expressed in physical screen coordinates. */
+    private void dispatchScreenTap(
+            int screenX,
+            int screenY,
+            long durationMillis,
+            Runnable completed,
+            Runnable failed) {
+        long generation = runGeneration;
+        Path path = new Path();
+        path.moveTo(screenX, screenY);
+        GestureDescription gesture = new GestureDescription.Builder()
+                .addStroke(new GestureDescription.StrokeDescription(path, 0, durationMillis))
+                .build();
+        boolean accepted = dispatchGesture(gesture, new GestureResultCallback() {
+            @Override
+            public void onCompleted(GestureDescription gestureDescription) {
+                if (isActiveRun(generation)) {
+                    completed.run();
+                }
+            }
+
+            @Override
+            public void onCancelled(GestureDescription gestureDescription) {
+                if (isActiveRun(generation)) {
+                    setStatus(getString(R.string.status_tap_cancelled));
+                    failed.run();
+                }
+            }
+        }, handler);
+        if (!accepted && isActiveRun(generation)) {
+            setStatus(getString(R.string.status_tap_rejected));
+            failed.run();
+        }
+    }
+
     private void showPlantingEntryGestureStatus(String phase, int messageResource) {
         String message = getString(messageResource);
         if (phase.startsWith("initial")) {
@@ -3892,6 +6176,154 @@ public final class PetalAccessibilityService extends AccessibilityService {
         return running && generation == runGeneration;
     }
 
+    private void startOcrTransaction(
+            Bitmap bitmap,
+            OcrScan.Profile profile,
+            CaptureGeometry geometry,
+            String diagnosticSource,
+            boolean recycleSourceAtTerminal,
+            OcrFrameConsumer success,
+            OcrFailureConsumer failure) {
+        if (geometry == null) {
+            busy = false;
+            failure.accept(new IllegalArgumentException("Capture geometry is required"));
+            return;
+        }
+        OcrScanner.Transaction transaction =
+                ocrTransactions.begin(runGeneration, geometry.captureSequence());
+        Runnable sourceCleanup = recycleSourceAtTerminal
+                ? () -> {
+                    if (!bitmap.isRecycled()) {
+                        bitmap.recycle();
+                    }
+                }
+                : () -> { };
+        ActiveOcrTransaction active = new ActiveOcrTransaction(
+                transaction,
+                diagnosticSource,
+                profile,
+                geometry,
+                success,
+                failure,
+                sourceCleanup);
+        activeOcrTransaction = active;
+        busy = true;
+        handler.postDelayed(active.watchdog, OCR_CALLBACK_TIMEOUT_MILLIS);
+        try {
+            scanner.scan(
+                    bitmap,
+                    profile,
+                    geometry,
+                    transaction,
+                    getMainExecutor(),
+                    new OcrScanner.FrameCallback() {
+                        @Override
+                        public void onSuccess(OcrScan.Frame frame) {
+                            completeOcrSuccess(active, frame);
+                        }
+
+                        @Override
+                        public void onFailure(Exception error) {
+                            completeOcrFailure(
+                                    active,
+                                    error,
+                                    !(error instanceof OcrScanner.GeometryException));
+                        }
+                    });
+        } catch (RuntimeException error) {
+            if (transaction.tryFinish(OcrScanner.TerminalState.FAILURE)) {
+                completeOcrFailure(active, error, true);
+            }
+        }
+    }
+
+    private ActiveOcrTransaction clearActiveOcrTransaction(ActiveOcrTransaction expected) {
+        if (expected == null
+                || activeOcrTransaction != expected
+                || !ocrTransactions.clear(expected.transaction)) {
+            return null;
+        }
+        handler.removeCallbacks(expected.watchdog);
+        activeOcrTransaction = null;
+        busy = false;
+        return expected;
+    }
+
+    private void completeOcrSuccess(ActiveOcrTransaction expected, OcrScan.Frame frame) {
+        ActiveOcrTransaction completed = clearActiveOcrTransaction(expected);
+        if (completed == null) {
+            return;
+        }
+        try {
+            if (!isActiveRun(completed.transaction.id().runGeneration())) {
+                return;
+            }
+            consecutiveOcrEngineFailures = 0;
+            if (!frame.canDriveAction(completed.transaction.id())) {
+                completed.failure.accept(
+                        new IllegalStateException("OCR frame failed action admission"));
+                return;
+            }
+            try {
+                completed.success.accept(frame);
+            } catch (RuntimeException error) {
+                Log.e(TAG, "OCR success callback failed", error);
+                if (isActiveRun(completed.transaction.id().runGeneration())) {
+                    completed.failure.accept(error);
+                }
+            }
+        } finally {
+            completed.sourceCleanup.run();
+        }
+    }
+
+    private void completeOcrFailure(
+            ActiveOcrTransaction expected, Exception error, boolean engineFailure) {
+        ActiveOcrTransaction completed = clearActiveOcrTransaction(expected);
+        if (completed == null) {
+            return;
+        }
+        try {
+            if (!isActiveRun(completed.transaction.id().runGeneration())) {
+                return;
+            }
+            if (engineFailure && ++consecutiveOcrEngineFailures >= MAX_ACTION_ATTEMPTS) {
+                recordOcrDiagnosticFailure(
+                        completed.diagnosticSource,
+                        completed.profile,
+                        completed.geometry,
+                        error);
+                stopWithError(getString(R.string.status_ocr_failed));
+                return;
+            }
+            completed.failure.accept(error);
+        } finally {
+            completed.sourceCleanup.run();
+        }
+    }
+
+    private void ocrTimedOut(ActiveOcrTransaction expected) {
+        if (activeOcrTransaction != expected
+                || !expected.transaction.tryFinish(OcrScanner.TerminalState.TIMEOUT)) {
+            return;
+        }
+        completeOcrFailure(
+                expected, new IllegalStateException("OCR callback timed out"), true);
+    }
+
+    private void cancelActiveOcrTransaction() {
+        ActiveOcrTransaction active = activeOcrTransaction;
+        if (active == null) {
+            return;
+        }
+        active.transaction.tryFinish(OcrScanner.TerminalState.CANCELLED);
+        ActiveOcrTransaction cancelled = clearActiveOcrTransaction(active);
+        if (cancelled != null) {
+            // A callback already dispatched to the main queue may still read source pixels.
+            handler.postDelayed(cancelled.sourceCleanup, OCR_CALLBACK_TIMEOUT_MILLIS);
+        }
+    }
+
     /** 將截圖或 OCR 失敗轉成狀態文字並安排下一次重試。 */
     private void scanFailed(String message, long generation) {
         if (!isActiveRun(generation)) {
@@ -3899,12 +6331,22 @@ public final class PetalAccessibilityService extends AccessibilityService {
         }
         busy = false;
         setStatus(message);
+        if (automationMode == AutomationMode.FEED
+                && feedStep == FeedStep.FEEDING
+                && feedHoldStroke != null
+                && android.os.SystemClock.elapsedRealtime() - feedHoldStartedAt
+                        >= FEED_HOLD_MAX_MILLIS) {
+            releaseFeedHoldGesture("ocr-timeout");
+            return;
+        }
         scheduleNext();
     }
 
     /** 依使用者設定安排下一次掃描。 */
     private void scheduleNext() {
-        schedule(SCAN_INTERVAL_MILLIS);
+        schedule(automationMode == AutomationMode.FEED
+                ? FEED_OCR_RETRY_MILLIS
+                : SCAN_INTERVAL_MILLIS);
     }
 
     /** 清掉舊排程後建立新的最小延遲排程。 */
@@ -3912,6 +6354,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
         handler.removeCallbacks(scanTask);
         if (running) {
             long minimum = switch (automationMode) {
+                case FEED -> 200L;
                 case DISPATCH -> dispatchMinimumScanDelay();
                 case RETURN_REWARD -> RETURN_REWARD_SCAN_DELAY_MILLIS;
                 case POSTCARD -> isPetalSearchStep(postcardAutomation.step())
@@ -3931,10 +6374,12 @@ public final class PetalAccessibilityService extends AccessibilityService {
         }
         return switch (expeditionDispatchSession.stage()) {
             case LIST_SEARCH -> DISPATCH_AFTER_SCROLL_DELAY_MILLIS;
-            case SELECTION -> dispatchSelectionMethod == DispatchSelectionMethod.DRAG_12
-                    && dispatchColorSelected && !dispatchPikminSelected
-                    ? DISPATCH_PIKMIN_TAP_DELAY_MILLIS
-                    : DISPATCH_SCAN_DELAY_MILLIS;
+            case SELECTION -> dispatchAutoTapAttempts > 0 && !dispatchPikminSelected
+                    ? DISPATCH_AUTO_VERIFY_DELAY_MILLIS
+                    : dispatchSelectionMethod == DispatchSelectionMethod.DRAG_12
+                            && dispatchColorSelected && !dispatchPikminSelected
+                            ? DISPATCH_PIKMIN_TAP_DELAY_MILLIS
+                            : DISPATCH_SCAN_DELAY_MILLIS;
             default -> DISPATCH_SCAN_DELAY_MILLIS;
         };
     }
@@ -3952,28 +6397,21 @@ public final class PetalAccessibilityService extends AccessibilityService {
         };
     }
 
-    /** 建立整潔、可拖曳且不阻擋遊戲操作的主懸浮窗。 */
+    /** 建立 50x50dp 懸浮 ICON；點擊行為仍沿用原本流程。 */
     private boolean showOverlay() {
         if (overlay != null) {
             return true;
         }
         windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
 
-        // 只保留一個可拖曳圖示；狀態、按鈕與輸入欄位全部移到設定卡片。
         DraggableIcon icon = new DraggableIcon();
         icon.setImageResource(R.drawable.ic_overlay_flower);
-        icon.setContentDescription(getString(
-                R.string.overlay_status_accessibility,
-                getString(R.string.overlay_icon_description),
-                getString(R.string.overlay_icon_move_hint)));
+        // 明確讓 drawable 填滿 50dp 視窗，避免只放大透明外框。
+        icon.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
         icon.setFocusable(true);
-        icon.setElevation(dp(2));
-        icon.setPadding(
-                dp(OVERLAY_PADDING_DP),
-                dp(OVERLAY_PADDING_DP),
-                dp(OVERLAY_PADDING_DP),
-                dp(OVERLAY_PADDING_DP));
-        icon.setBackground(roundedBackground(OVERLAY_SURFACE, OVERLAY_GREEN, 10));
+        icon.setElevation(0);
+        icon.setPadding(0, 0, 0, 0);
+        icon.setBackground(null);
         icon.setOnClickListener(view -> {
             if (running) {
                 pause(getString(R.string.status_paused));
@@ -3982,6 +6420,10 @@ public final class PetalAccessibilityService extends AccessibilityService {
                 showSettingsOverlay();
             }
         });
+        icon.setContentDescription(getString(
+                R.string.overlay_status_accessibility,
+                getString(R.string.overlay_icon_description),
+                getString(R.string.overlay_icon_move_hint)));
 
         WindowManager.LayoutParams params = new WindowManager.LayoutParams(
                 dp(OVERLAY_SIZE_DP),
@@ -4012,11 +6454,18 @@ public final class PetalAccessibilityService extends AccessibilityService {
         }
         pause(getString(R.string.status_paused));
 
-        LinearLayout panel = new LinearLayout(this);
+        List<EditText> numberInputs = new ArrayList<>();
+        LinearLayout panel = new LinearLayout(this) {
+            @Override
+            public boolean dispatchTouchEvent(MotionEvent event) {
+                dismissNumberKeyboardOnOutsideTap(this, numberInputs, event);
+                return super.dispatchTouchEvent(event);
+            }
+        };
         panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(dp(10), dp(10), dp(10), dp(8));
+        panel.setPadding(dp(8), dp(8), dp(8), dp(8));
         panel.setElevation(dp(18));
-        panel.setBackground(roundedBackground(OVERLAY_SURFACE, OVERLAY_BORDER, 24));
+        panel.setBackground(roundedBackground(OVERLAY_SURFACE, OVERLAY_BORDER, 22));
         panel.setAccessibilityPaneTitle(getString(R.string.overlay_brand_title));
         panel.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
 
@@ -4024,22 +6473,27 @@ public final class PetalAccessibilityService extends AccessibilityService {
         header.setGravity(Gravity.CENTER_VERTICAL);
         header.setPadding(dp(12), dp(6), dp(4), dp(8));
 
-        TextView title = formText(
-                getString(R.string.overlay_brand_title) + " " + BuildConfig.VERSION_NAME,
-                20,
+        LinearLayout heading = new LinearLayout(this);
+        heading.setOrientation(LinearLayout.VERTICAL);
+        TextView title = formText(getString(R.string.overlay_page_planting_title), 20,
                 Color.rgb(23, 59, 42));
         title.setTypeface(null, android.graphics.Typeface.BOLD);
-        header.addView(title, new LinearLayout.LayoutParams(
+        heading.addView(title);
+        TextView subtitle = formText(
+                getString(R.string.overlay_page_planting_subtitle), 12, OVERLAY_MUTED);
+        heading.addView(subtitle);
+        header.addView(heading, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
-        TextView readyChip = formText(getString(R.string.overlay_ready), 11, OVERLAY_GREEN);
+        TextView readyChip = formText(
+                getString(R.string.overlay_canvas_ready), 11, OVERLAY_GREEN);
         readyChip.setGravity(Gravity.CENTER);
         readyChip.setPadding(dp(12), 0, dp(12), 0);
         readyChip.setBackground(roundedBackground(OVERLAY_MINT, 0, 15));
         readyChip.setContentDescription(getString(
                 R.string.overlay_status_accessibility,
                 getString(R.string.overlay_current_status),
-                getString(R.string.overlay_ready)));
+                getString(R.string.overlay_canvas_ready)));
         header.addView(readyChip, new LinearLayout.LayoutParams(dp(96), dp(32)));
 
         Button close = compactIconButton("×", getString(R.string.overlay_close));
@@ -4053,25 +6507,34 @@ public final class PetalAccessibilityService extends AccessibilityService {
         panel.addView(header);
 
         LinearLayout tabs = new LinearLayout(this);
+        tabs.setOrientation(LinearLayout.VERTICAL);
         tabs.setPadding(dp(4), dp(4), dp(4), dp(4));
         tabs.setBackground(roundedBackground(Color.rgb(237, 242, 236), 0, 14));
         Button plantingTab = overlayButton(getString(R.string.overlay_tab_planting));
+        Button feedTab = overlayButton(getString(R.string.overlay_tab_feed));
         Button postcardTab = overlayButton(getString(R.string.overlay_tab_postcard));
         Button rewardTab = overlayButton(getString(R.string.overlay_tab_reward));
         Button returnRewardTab = overlayButton(getString(R.string.overlay_tab_return_reward));
         plantingTab.setTextSize(11);
+        feedTab.setTextSize(11);
         postcardTab.setTextSize(11);
         rewardTab.setTextSize(11);
         returnRewardTab.setTextSize(11);
         plantingTab.setContentDescription(getString(R.string.overlay_tab_planting_description));
+        feedTab.setContentDescription(getString(R.string.overlay_tab_feed_description));
         postcardTab.setContentDescription(getString(R.string.overlay_tab_postcard_description));
         rewardTab.setContentDescription(getString(R.string.overlay_tab_reward_description));
         returnRewardTab.setContentDescription(
                 getString(R.string.overlay_tab_return_reward_description));
-        tabs.addView(plantingTab, weightedButtonParams());
-        tabs.addView(postcardTab, weightedButtonParams());
-        tabs.addView(rewardTab, weightedButtonParams());
-        tabs.addView(returnRewardTab, weightedButtonParams());
+        LinearLayout automationTabs = new LinearLayout(this);
+        automationTabs.addView(plantingTab, weightedButtonParams());
+        automationTabs.addView(feedTab, weightedButtonParams());
+        automationTabs.addView(postcardTab, weightedButtonParams());
+        tabs.addView(automationTabs, matchWidthParams(dp(48), 0));
+        LinearLayout utilityTabs = new LinearLayout(this);
+        utilityTabs.addView(rewardTab, weightedButtonParams());
+        utilityTabs.addView(returnRewardTab, weightedButtonParams());
+        tabs.addView(utilityTabs, matchWidthParams(dp(48), dp(4)));
         LinearLayout.LayoutParams tabsParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         tabsParams.setMargins(dp(10), 0, dp(10), dp(8));
@@ -4084,6 +6547,11 @@ public final class PetalAccessibilityService extends AccessibilityService {
         plantingContent.setOrientation(LinearLayout.VERTICAL);
         plantingContent.setPadding(dp(12), dp(6), dp(12), dp(10));
         TextView statusView = formText(getString(R.string.overlay_ready_planting), 15, OVERLAY_GREEN);
+        plantingContent.addView(settingsHeroCard(
+                getString(R.string.overlay_planting_hero_label),
+                getString(R.string.overlay_planting_hero_title, settings.allowedFlowers().size()),
+                getString(R.string.overlay_planting_hero_detail, settings.threshold()),
+                OVERLAY_MINT));
         plantingContent.addView(settingsStatusCard(
                 statusView,
                 getString(
@@ -4099,13 +6567,17 @@ public final class PetalAccessibilityService extends AccessibilityService {
                 settings.threshold(),
                 1,
                 1200);
+        numberInputs.add(thresholdInput.input());
         plantingContent.addView(thresholdInput);
+        plantingContent.addView(settingsPresetRow(thresholdInput.input(), 100, 200, 300, 500));
 
         plantingContent.addView(settingsSectionTitle(
                 getString(R.string.overlay_section_flower_order),
                 getString(R.string.overlay_flower_order_helper)));
         FlowerOrderEditor flowerEditor = new FlowerOrderEditor(settings.allowedFlowers());
         plantingContent.addView(flowerEditor);
+        plantingContent.addView(settingsHelperCard(
+                getString(R.string.overlay_planting_advanced_settings), OVERLAY_SURFACE_2));
         TextView error = settingsErrorView();
         plantingContent.addView(error);
 
@@ -4125,6 +6597,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
             settings.save(input.threshold(), input.flowers());
         };
         save.setOnClickListener(view -> {
+            dismissNumberKeyboard(plantingPage, numberInputs);
             try {
                 savePlanting.run();
                 closeSettingsOverlay(true);
@@ -4134,6 +6607,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
             }
         });
         toggleButton.setOnClickListener(view -> {
+            dismissNumberKeyboard(plantingPage, numberInputs);
             try {
                 savePlanting.run();
                 startAutomation();
@@ -4147,12 +6621,150 @@ public final class PetalAccessibilityService extends AccessibilityService {
         });
         plantingPage.addView(settingsFooter(save, toggleButton));
 
+        LinearLayout feedPage = new LinearLayout(this);
+        feedPage.setOrientation(LinearLayout.VERTICAL);
+        feedPage.setFocusableInTouchMode(true);
+        LinearLayout feedContent = new LinearLayout(this);
+        feedContent.setOrientation(LinearLayout.VERTICAL);
+        feedContent.setPadding(dp(12), dp(6), dp(12), dp(10));
+        TextView feedStatusView = formText(
+                getString(R.string.overlay_ready_feed), 15, OVERLAY_GREEN);
+        feedContent.addView(settingsHeroCard(
+                getString(R.string.overlay_feed_missing_label),
+                getString(R.string.overlay_feed_missing_title),
+                getString(R.string.overlay_feed_missing_detail),
+                OVERLAY_WARNING));
+        feedContent.addView(settingsStatusCard(
+                feedStatusView,
+                getString(
+                        R.string.overlay_feed_summary,
+                        settings.feedsPerSquad(),
+                        settings.maxSquadSwitches(),
+                        settings.nectarMinimumThreshold(),
+                        settings.feedPetalLimit() - 50)));
+        feedContent.addView(settingsSectionTitle(
+                getString(R.string.overlay_feed_production_section), ""));
+
+        StepperField feedsPerSquadInput = new StepperField(
+                getString(R.string.overlay_feed_rounds),
+                getString(R.string.overlay_feed_rounds_range),
+                settings.feedsPerSquad(),
+                1,
+                10);
+        numberInputs.add(feedsPerSquadInput.input());
+        feedContent.addView(feedsPerSquadInput);
+        feedContent.addView(new View(this), matchWidthParams(dp(8), 0));
+
+        StepperField maxSquadSwitchesInput = new StepperField(
+                getString(R.string.overlay_feed_switches),
+                getString(R.string.overlay_feed_switches_range),
+                settings.maxSquadSwitches(),
+                0,
+                120);
+        numberInputs.add(maxSquadSwitchesInput.input());
+        feedContent.addView(maxSquadSwitchesInput);
+        feedContent.addView(new View(this), matchWidthParams(dp(8), 0));
+
+        StepperField nectarMinimumInput = new StepperField(
+                getString(R.string.overlay_feed_nectar_minimum),
+                getString(R.string.overlay_feed_nectar_range),
+                settings.nectarMinimumThreshold(),
+                0,
+                1200);
+        numberInputs.add(nectarMinimumInput.input());
+        feedContent.addView(nectarMinimumInput);
+        feedContent.addView(new View(this), matchWidthParams(dp(8), 0));
+
+        StepperField petalLimitInput = new StepperField(
+                getString(R.string.overlay_feed_petal_limit),
+                getString(R.string.overlay_feed_petal_limit_range),
+                settings.feedPetalLimit(),
+                300,
+                1200,
+                50);
+        numberInputs.add(petalLimitInput.input());
+        feedContent.addView(petalLimitInput);
+        feedContent.addView(settingsHelperCard(
+                getString(R.string.overlay_feed_stop_line, settings.feedPetalLimit() - 50),
+                OVERLAY_WARNING));
+
+        feedContent.addView(settingsSectionTitle(
+                getString(R.string.overlay_feed_order_title),
+                getString(R.string.overlay_feed_order_helper)));
+        FlowerOrderEditor feedFlowerEditor = new FlowerOrderEditor(settings.allowedFlowers(), true);
+        feedContent.addView(feedFlowerEditor);
+        feedContent.addView(settingsSectionTitle(
+                getString(R.string.overlay_feed_safety_section), ""));
+        feedContent.addView(settingsHelperCard(
+                getString(R.string.overlay_feed_safety), OVERLAY_CREAM));
+        TextView feedError = settingsErrorView();
+        feedContent.addView(feedError);
+
+        ScrollView feedScroll = new ScrollView(this);
+        feedScroll.setFillViewport(true);
+        feedScroll.setClipToPadding(false);
+        feedScroll.addView(feedContent);
+        feedPage.addView(feedScroll, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+
+        Button feedSave = overlayButton(getString(R.string.overlay_save));
+        Button feedStart = overlayButton(getString(R.string.overlay_feed_start));
+        stylePrimaryButton(feedStart);
+        Runnable saveFeed = () -> {
+            FeedSettingsInput input = FeedSettingsInput.parse(
+                    feedsPerSquadInput.valueText(),
+                    maxSquadSwitchesInput.valueText(),
+                    nectarMinimumInput.valueText(),
+                    petalLimitInput.valueText());
+            SettingsInput flowerInput = SettingsInput.parse(
+                    String.valueOf(settings.threshold()), feedFlowerEditor.valueText());
+            settings.save(settings.threshold(), flowerInput.flowers());
+            settings.saveFeedSettings(
+                    input.feedsPerSquad(),
+                    input.maxSquadSwitches(),
+                    input.nectarMinimumThreshold(),
+                    input.petalLimit());
+        };
+        feedSave.setOnClickListener(view -> {
+            dismissNumberKeyboard(feedPage, numberInputs);
+            try {
+                saveFeed.run();
+                closeSettingsOverlay(true);
+            } catch (IllegalArgumentException exception) {
+                feedError.setText(exception.getMessage());
+                feedError.requestFocus();
+            }
+        });
+        feedStart.setOnClickListener(view -> {
+            dismissNumberKeyboard(feedPage, numberInputs);
+            try {
+                saveFeed.run();
+                FeedSettingsInput input = new FeedSettingsInput(
+                        settings.feedsPerSquad(),
+                        settings.maxSquadSwitches(),
+                        settings.nectarMinimumThreshold(),
+                        settings.feedPetalLimit());
+                closeSettingsOverlay(false);
+                handler.postDelayed(() -> startFeedAutomation(input), 180L);
+            } catch (IllegalArgumentException exception) {
+                feedError.setText(exception.getMessage());
+                feedError.requestFocus();
+            }
+        });
+        feedPage.addView(settingsFooter(feedSave, feedStart));
+        feedPage.setVisibility(View.GONE);
+
         LinearLayout postcardPage = new LinearLayout(this);
         postcardPage.setOrientation(LinearLayout.VERTICAL);
         postcardPage.setFocusableInTouchMode(true);
         LinearLayout postcardContent = new LinearLayout(this);
         postcardContent.setOrientation(LinearLayout.VERTICAL);
         postcardContent.setPadding(dp(12), dp(6), dp(12), dp(10));
+        postcardContent.addView(settingsHeroCard(
+                getString(R.string.overlay_postcard_plan_label),
+                getString(R.string.overlay_postcard_plan_title, settings.postcardCollectionLimit()),
+                getString(R.string.overlay_postcard_plan_detail),
+                OVERLAY_MINT));
         postcardContent.addView(settingsSectionTitle(
                 getString(R.string.overlay_postcard_settings_section), ""));
 
@@ -4162,6 +6774,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
                 settings.postcardCollectionLimit(),
                 0,
                 15);
+        numberInputs.add(postcardLimitInput.input());
         postcardContent.addView(postcardLimitInput);
 
         postcardContent.addView(settingsSectionTitle(
@@ -4186,6 +6799,10 @@ public final class PetalAccessibilityService extends AccessibilityService {
         postcardContent.addView(settingsHelperCard(
                 getString(R.string.overlay_postcard_petal_requirement), OVERLAY_CREAM),
                 requirementParams);
+        postcardContent.addView(settingsSectionTitle(
+                getString(R.string.overlay_postcard_stop_conditions), ""));
+        postcardContent.addView(settingsHelperCard(
+                getString(R.string.overlay_postcard_stop_condition_items), OVERLAY_SURFACE_2));
 
         TextView postcardError = settingsErrorView();
         postcardContent.addView(postcardError);
@@ -4211,6 +6828,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
                     input.pikminCount());
         };
         postcardSave.setOnClickListener(view -> {
+            dismissNumberKeyboard(postcardPage, numberInputs);
             try {
                 savePostcard.run();
                 closeSettingsOverlay(true);
@@ -4220,6 +6838,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
             }
         });
         postcardToggle.setOnClickListener(view -> {
+            dismissNumberKeyboard(postcardPage, numberInputs);
             try {
                 PostcardSettingsInput input = PostcardSettingsInput.parse(
                         postcardLimitInput.valueText(),
@@ -4256,6 +6875,11 @@ public final class PetalAccessibilityService extends AccessibilityService {
         rewardContent.setPadding(dp(12), dp(6), dp(12), dp(10));
         TextView rewardStatusView = formText(
                 getString(R.string.overlay_reward_status_unselected), 15, OVERLAY_GREEN);
+        rewardContent.addView(settingsHeroCard(
+                getString(R.string.overlay_reward_missing_label),
+                getString(R.string.overlay_reward_missing_title),
+                getString(R.string.overlay_reward_missing_detail),
+                OVERLAY_WARNING));
         rewardContent.addView(settingsStatusCard(
                 rewardStatusView,
                 getString(R.string.overlay_reward_status_summary)));
@@ -4266,8 +6890,11 @@ public final class PetalAccessibilityService extends AccessibilityService {
                 settings.expeditionDispatchCount(),
                 1,
                 99);
+        numberInputs.add(rewardCountInput.input());
         rewardContent.addView(rewardCountInput, matchWidthParams(dp(72), dp(4)));
 
+        rewardContent.addView(settingsSectionTitle(
+                getString(R.string.overlay_reward_dispatch_section), ""));
         rewardContent.addView(settingsSectionTitle(
                 getString(R.string.overlay_reward_target_section),
                 getString(R.string.overlay_reward_target_helper)));
@@ -4286,6 +6913,10 @@ public final class PetalAccessibilityService extends AccessibilityService {
         DispatchPikminTypeSelector rewardPikminSelector = new DispatchPikminTypeSelector(
                 settings.dispatchPikminType());
         rewardContent.addView(rewardPikminSelector);
+        rewardContent.addView(settingsSectionTitle(
+                getString(R.string.overlay_reward_protection_section), ""));
+        rewardContent.addView(settingsHelperCard(
+                getString(R.string.overlay_reward_safety_items), OVERLAY_SURFACE_2));
 
         TextView rewardError = settingsErrorView();
         rewardContent.addView(rewardError);
@@ -4319,6 +6950,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
                     rewardPikminSelector.value());
         };
         rewardSave.setOnClickListener(view -> {
+            dismissNumberKeyboard(rewardPage, numberInputs);
             try {
                 saveReward.run();
                 closeSettingsOverlay(true);
@@ -4328,6 +6960,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
             }
         });
         rewardStart.setOnClickListener(view -> {
+            dismissNumberKeyboard(rewardPage, numberInputs);
             try {
                 saveReward.run();
                 int count = settings.expeditionDispatchCount();
@@ -4353,6 +6986,18 @@ public final class PetalAccessibilityService extends AccessibilityService {
         returnRewardContent.setPadding(dp(12), dp(6), dp(12), dp(10));
         TextView returnRewardStatusView = formText(
                 getString(R.string.overlay_reward_status_unselected), 15, OVERLAY_GREEN);
+        LinearLayout returnHero = settingsHeroCard(
+                getString(R.string.overlay_return_reward_hero_label),
+                getString(R.string.overlay_return_reward_hero_title),
+                getString(R.string.overlay_return_reward_hero_detail),
+                OVERLAY_INFO);
+        Button returnSelectArea = overlayButton(
+                getString(R.string.overlay_return_reward_select_area));
+        LinearLayout.LayoutParams returnSelectAreaParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(48));
+        returnSelectAreaParams.topMargin = dp(12);
+        returnHero.addView(returnSelectArea, returnSelectAreaParams);
+        returnRewardContent.addView(returnHero);
         returnRewardContent.addView(settingsStatusCard(
                 returnRewardStatusView,
                 getString(R.string.overlay_return_reward_status_summary)));
@@ -4362,6 +7007,21 @@ public final class PetalAccessibilityService extends AccessibilityService {
         ReturnPostcardActionSelector returnPostcardAction =
                 new ReturnPostcardActionSelector(settings.receiveReturnedPostcards());
         returnRewardContent.addView(returnPostcardAction);
+        CheckBox continueNectarWarning = new CheckBox(this);
+        continueNectarWarning.setText(
+                R.string.overlay_return_reward_nectar_warning_continue);
+        continueNectarWarning.setTextSize(14);
+        continueNectarWarning.setTextColor(OVERLAY_GREEN);
+        continueNectarWarning.setPadding(0, dp(8), 0, dp(2));
+        continueNectarWarning.setMinHeight(dp(48));
+        continueNectarWarning.setContentDescription(getString(
+                R.string.overlay_return_reward_nectar_warning_continue));
+        continueNectarWarning.setChecked(settings.continueReturnRewardOnNectarWarning());
+        returnRewardContent.addView(continueNectarWarning);
+        returnRewardContent.addView(settingsHelperCard(
+                getString(R.string.overlay_return_reward_nectar_warning_helper), OVERLAY_CREAM));
+        returnRewardContent.addView(settingsSectionTitle(
+                getString(R.string.overlay_return_reward_protection_section), ""));
         returnRewardContent.addView(settingsHelperCard(
                 getString(R.string.overlay_return_reward_safety), OVERLAY_CREAM));
 
@@ -4376,7 +7036,15 @@ public final class PetalAccessibilityService extends AccessibilityService {
                 getString(R.string.overlay_return_reward_start));
         stylePrimaryButton(returnRewardStart);
         Runnable saveReturnReward = () -> settings.saveReturnRewardSettings(
-                returnPostcardAction.receive());
+                returnPostcardAction.receive(), continueNectarWarning.isChecked());
+        returnSelectArea.setOnClickListener(view -> {
+            saveReturnReward.run();
+            boolean receive = returnPostcardAction.receive();
+            boolean continueOnNectarWarning = continueNectarWarning.isChecked();
+            closeSettingsOverlay(false);
+            handler.postDelayed(
+                    () -> startReturnRewardCollection(receive, continueOnNectarWarning), 180L);
+        });
         returnRewardSave.setOnClickListener(view -> {
             saveReturnReward.run();
             closeSettingsOverlay(true);
@@ -4384,64 +7052,121 @@ public final class PetalAccessibilityService extends AccessibilityService {
         returnRewardStart.setOnClickListener(view -> {
             saveReturnReward.run();
             boolean receive = returnPostcardAction.receive();
+            boolean continueOnNectarWarning = continueNectarWarning.isChecked();
             closeSettingsOverlay(false);
-            handler.postDelayed(() -> startReturnRewardCollection(receive), 180L);
+            handler.postDelayed(
+                    () -> startReturnRewardCollection(receive, continueOnNectarWarning), 180L);
         });
         returnRewardPage.addView(settingsFooter(returnRewardSave, returnRewardStart));
         returnRewardPage.setVisibility(View.GONE);
 
+
         LinearLayout.LayoutParams pageParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f);
         panel.addView(plantingPage, pageParams);
+        panel.addView(feedPage, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
         panel.addView(postcardPage, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
         panel.addView(rewardPage, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
         panel.addView(returnRewardPage, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
-
         plantingTab.setOnClickListener(view -> {
             plantingPage.setVisibility(View.VISIBLE);
+            feedPage.setVisibility(View.GONE);
             postcardPage.setVisibility(View.GONE);
             rewardPage.setVisibility(View.GONE);
             returnRewardPage.setVisibility(View.GONE);
-            setSelectedTab(plantingTab, postcardTab, rewardTab, returnRewardTab);
+            setSelectedTab(plantingTab, feedTab, postcardTab, rewardTab, returnRewardTab);
             status = statusView;
             toggle = toggleButton;
+            setSettingsHeader(title, subtitle, readyChip,
+                    R.string.overlay_page_planting_title,
+                    R.string.overlay_page_planting_subtitle,
+                    R.string.overlay_canvas_ready,
+                    false);
             plantingPage.requestFocus();
+        });
+        feedTab.setOnClickListener(view -> {
+            plantingPage.setVisibility(View.GONE);
+            feedPage.setVisibility(View.VISIBLE);
+            postcardPage.setVisibility(View.GONE);
+            rewardPage.setVisibility(View.GONE);
+            returnRewardPage.setVisibility(View.GONE);
+            setSelectedTab(feedTab, plantingTab, postcardTab, rewardTab, returnRewardTab);
+            status = feedStatusView;
+            toggle = feedStart;
+            setSettingsHeader(title, subtitle, readyChip,
+                    R.string.overlay_page_feed_title,
+                    R.string.overlay_page_feed_subtitle,
+                    R.string.overlay_canvas_action,
+                    true);
+            feedPage.requestFocus();
         });
         postcardTab.setOnClickListener(view -> {
             plantingPage.setVisibility(View.GONE);
+            feedPage.setVisibility(View.GONE);
             postcardPage.setVisibility(View.VISIBLE);
             rewardPage.setVisibility(View.GONE);
             returnRewardPage.setVisibility(View.GONE);
-            setSelectedTab(postcardTab, plantingTab, rewardTab, returnRewardTab);
+            setSelectedTab(postcardTab, plantingTab, feedTab, rewardTab, returnRewardTab);
             status = null;
             toggle = postcardToggle;
+            setSettingsHeader(title, subtitle, readyChip,
+                    R.string.overlay_page_postcard_title,
+                    R.string.overlay_page_postcard_subtitle,
+                    R.string.overlay_canvas_idle,
+                    false);
             postcardPage.requestFocus();
         });
         rewardTab.setOnClickListener(view -> {
             plantingPage.setVisibility(View.GONE);
+            feedPage.setVisibility(View.GONE);
             postcardPage.setVisibility(View.GONE);
             rewardPage.setVisibility(View.VISIBLE);
             returnRewardPage.setVisibility(View.GONE);
-            setSelectedTab(rewardTab, plantingTab, postcardTab, returnRewardTab);
+            setSelectedTab(rewardTab, plantingTab, feedTab, postcardTab, returnRewardTab);
             status = rewardStatusView;
             toggle = rewardStart;
+            setSettingsHeader(title, subtitle, readyChip,
+                    R.string.overlay_page_dispatch_title,
+                    R.string.overlay_page_dispatch_subtitle,
+                    R.string.overlay_canvas_action,
+                    true);
             rewardPage.requestFocus();
         });
         returnRewardTab.setOnClickListener(view -> {
             plantingPage.setVisibility(View.GONE);
+            feedPage.setVisibility(View.GONE);
             postcardPage.setVisibility(View.GONE);
             rewardPage.setVisibility(View.GONE);
             returnRewardPage.setVisibility(View.VISIBLE);
-            setSelectedTab(returnRewardTab, plantingTab, postcardTab, rewardTab);
+            setSelectedTab(returnRewardTab, plantingTab, feedTab, postcardTab, rewardTab);
             status = returnRewardStatusView;
             toggle = returnRewardStart;
+            setSettingsHeader(title, subtitle, readyChip,
+                    R.string.overlay_page_return_title,
+                    R.string.overlay_page_return_subtitle,
+                    R.string.overlay_canvas_no_area,
+                    true);
             returnRewardPage.requestFocus();
         });
-        setSelectedTab(plantingTab, postcardTab, rewardTab, returnRewardTab);
+        setSelectedTab(plantingTab, feedTab, postcardTab, rewardTab, returnRewardTab);
 
+        WindowManager.LayoutParams params = settingsOverlayLayoutParams();
+        if (!safeAddOverlayView(panel, params, "settings")) {
+            return;
+        }
+        settingsOverlay = panel;
+        status = statusView;
+        toggle = toggleButton;
+        overlay.setVisibility(View.GONE);
+        title.setFocusable(true);
+        title.requestFocus();
+    }
+
+    private WindowManager.LayoutParams settingsOverlayLayoutParams() {
         int width = Math.min(dp(360), getResources().getDisplayMetrics().widthPixels - dp(16));
         int height = Math.min(dp(720), getResources().getDisplayMetrics().heightPixels - dp(48));
         WindowManager.LayoutParams params = new WindowManager.LayoutParams(
@@ -4455,15 +7180,48 @@ public final class PetalAccessibilityService extends AccessibilityService {
         params.dimAmount = 0.18f;
         params.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
                 | WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN;
-        if (!safeAddOverlayView(panel, params, "settings")) {
+        return params;
+    }
+
+    private void dismissNumberKeyboardOnOutsideTap(
+            View overlayRoot,
+            List<EditText> numberInputs,
+            MotionEvent event) {
+        View focused = overlayRoot.findFocus();
+        boolean numberFieldFocused = focused instanceof EditText
+                && numberInputs.contains(focused);
+        boolean touchedNumberField = false;
+        if (event.getActionMasked() == MotionEvent.ACTION_DOWN && numberFieldFocused) {
+            int x = Math.round(event.getRawX());
+            int y = Math.round(event.getRawY());
+            Rect bounds = new Rect();
+            for (EditText input : numberInputs) {
+                if (input.getGlobalVisibleRect(bounds) && bounds.contains(x, y)) {
+                    touchedNumberField = true;
+                    break;
+                }
+            }
+        }
+        if (OverlayWindowPolicy.shouldDismissNumberKeyboard(
+                event.getActionMasked() == MotionEvent.ACTION_DOWN,
+                numberFieldFocused,
+                touchedNumberField)) {
+            dismissNumberKeyboard(overlayRoot, numberInputs);
+        }
+    }
+
+    private void dismissNumberKeyboard(View root, List<EditText> numberInputs) {
+        View focused = root.findFocus();
+        if (!(focused instanceof EditText input) || !numberInputs.contains(input)) {
             return;
         }
-        settingsOverlay = panel;
-        status = statusView;
-        toggle = toggleButton;
-        overlay.setVisibility(View.GONE);
-        title.setFocusable(true);
-        title.requestFocus();
+        dismissNumberKeyboard(input);
+    }
+
+    private void dismissNumberKeyboard(EditText input) {
+        ((InputMethodManager) getSystemService(INPUT_METHOD_SERVICE))
+                .hideSoftInputFromWindow(input.getWindowToken(), 0);
+        input.clearFocus();
     }
 
     /** 關閉設定卡片、收起鍵盤並恢復主懸浮窗。 */
@@ -4513,6 +7271,37 @@ public final class PetalAccessibilityService extends AccessibilityService {
         return card;
     }
 
+    private LinearLayout settingsHeroCard(String label, String title, String detail,
+            int backgroundColor) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(14), dp(13), dp(14), dp(13));
+        card.setBackground(roundedBackground(backgroundColor, 0, 16));
+        TextView eyebrow = formText(label, 11, OVERLAY_MUTED);
+        card.addView(eyebrow);
+        TextView headline = formText(title, 18, Color.rgb(24, 60, 49));
+        headline.setTypeface(null, android.graphics.Typeface.BOLD);
+        headline.setPadding(0, dp(3), 0, 0);
+        card.addView(headline);
+        TextView body = formText(detail, 12, OVERLAY_MUTED);
+        body.setPadding(0, dp(5), 0, 0);
+        card.addView(body);
+        return card;
+    }
+
+    private void setSettingsHeader(TextView title, TextView subtitle, TextView chip,
+            int titleResource, int subtitleResource, int chipResource, boolean warning) {
+        title.setText(titleResource);
+        subtitle.setText(subtitleResource);
+        chip.setText(chipResource);
+        chip.setTextColor(warning ? OVERLAY_RECOGNIZING : OVERLAY_GREEN);
+        chip.setBackground(roundedBackground(warning ? OVERLAY_CREAM : OVERLAY_MINT, 0, 15));
+        chip.setContentDescription(getString(
+                R.string.overlay_status_accessibility,
+                getString(R.string.overlay_current_status),
+                getString(chipResource)));
+    }
+
     private TextView settingsSectionTitle(String title, String helper) {
         TextView heading = formText(title, 15, Color.rgb(30, 65, 35));
         heading.setTypeface(null, android.graphics.Typeface.BOLD);
@@ -4552,6 +7341,21 @@ public final class PetalAccessibilityService extends AccessibilityService {
         return helper;
     }
 
+    private LinearLayout settingsPresetRow(EditText input, int... values) {
+        LinearLayout row = new LinearLayout(this);
+        row.setPadding(0, dp(7), 0, 0);
+        for (int value : values) {
+            Button preset = overlayButton(String.valueOf(value));
+            preset.setTextSize(12);
+            preset.setMinHeight(dp(40));
+            preset.setOnClickListener(view -> input.setText(String.valueOf(value)));
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(40), 1f);
+            params.setMarginEnd(dp(5));
+            row.addView(preset, params);
+        }
+        return row;
+    }
+
     /** 建立數字欄位並統一設定輸入尺寸。 */
     private EditText numberField(int value) {
         EditText field = new EditText(this);
@@ -4561,7 +7365,11 @@ public final class PetalAccessibilityService extends AccessibilityService {
         field.setPadding(dp(12), dp(8), dp(12), dp(8));
         field.setMinHeight(dp(50));
         field.setInputType(InputType.TYPE_CLASS_NUMBER);
-        field.setImeOptions(EditorInfo.IME_ACTION_NEXT);
+        field.setImeOptions(EditorInfo.IME_ACTION_DONE);
+        field.setOnEditorActionListener((view, actionId, event) -> {
+            dismissNumberKeyboard(field);
+            return true;
+        });
         field.setSelectAllOnFocus(true);
         return field;
     }
@@ -4599,6 +7407,22 @@ public final class PetalAccessibilityService extends AccessibilityService {
         return field;
     }
 
+    private static int parseBoundedInt(String value, int fallback, int minimum, int maximum) {
+        try {
+            return Math.max(minimum, Math.min(maximum, Integer.parseInt(value.trim())));
+        } catch (NumberFormatException error) {
+            return fallback;
+        }
+    }
+
+    private LinearLayout.LayoutParams settingsMatchParams(int topMarginDp) {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        params.setMargins(0, dp(topMarginDp), 0, 0);
+        return params;
+    }
+
     /** 建立設定表單的欄位標籤。 */
     private TextView formLabel(int stringResource) {
         TextView label = formText(getString(stringResource), 15, Color.rgb(30, 65, 35));
@@ -4611,7 +7435,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
     private TextView formText(String text, int size, int color) {
         TextView view = new TextView(this);
         view.setText(text);
-        view.setTextSize(10);
+        view.setTextSize(size);
         view.setTextColor(color);
         view.setLineSpacing(0, 1.18f);
         return view;
@@ -4633,6 +7457,10 @@ public final class PetalAccessibilityService extends AccessibilityService {
 
     /** 停止流程後保留錯誤卡，讓原因不會在短暫提示後消失。 */
     private void stopWithError(String message) {
+        if (automationMode == AutomationMode.PLANTING) {
+            logPlantingSwitch("stopped", false);
+            Log.i(TAG, "PLANTING_SWITCH reason=" + message);
+        }
         AutomationMode stoppedMode = automationMode;
         pause(message);
         setRunStatus(
@@ -4657,7 +7485,10 @@ public final class PetalAccessibilityService extends AccessibilityService {
 
     /** 停止所有掃描排程並將流程狀態重設為可重新開始。 */
     private void pause(String message) {
+        cancelActiveOcrTransaction();
+        consecutiveOcrEngineFailures = 0;
         runGeneration++;
+        clearScreenshotPipeline();
         running = false;
         automationMode = AutomationMode.NONE;
         expeditionDispatchSession = null;
@@ -4668,16 +7499,20 @@ public final class PetalAccessibilityService extends AccessibilityService {
         dispatchSearchTextConfirmed = false;
         dispatchSearchOpenAttempts = 0;
         dispatchSearchInputAttempts = 0;
-        dispatchKeyboardCloseAttempts = 0;
-        dispatchKeyboardAbsentFrames = 0;
+        dispatchSearchKeyboardGuard.reset();
         dispatchPikminTapIndex = 0;
         dispatchAutoTapAttempts = 0;
         dispatchAutoResultMissingFrames = 0;
-        dispatchAutoControlMissingFrames = 0;
+        dispatchAutoAnchorMissingFrames = 0;
         dispatchUnknownFrames = 0;
+        clearReturnRewardRoiOverlays();
+        returnRewardRoi.reset();
         returnRewardScanGuard.reset();
         returnRewardStartedAt = 0L;
         returnRewardLastTapAt = 0L;
+        returnRewardContinueOnNectarWarning = false;
+        returnRewardNectarWarningFrames = 0;
+        returnRewardNectarWarningActive = false;
         resetReturnRewardPostcard();
         switchGuard.reset();
         resetPlantingSearch();
@@ -4688,6 +7523,39 @@ public final class PetalAccessibilityService extends AccessibilityService {
         postcardMissingControlFrames = 0;
         postcardReceiptWaitFrames = 0;
         postcardBackAttempts = 0;
+        feedSettings = new FeedSettingsInput(6, 0, 40, 1200);
+        feedStep = FeedStep.WAITING_GAME_READY;
+        feedTargetFlower = "";
+        feedRound = 0;
+        feedAttemptCount = 0;
+        feedSquadSwitchCount = 0;
+        feedTargetMissingFrames = 0;
+        feedReadyMissingFrames = 0;
+        feedNectarOpenAttempts = 0;
+        feedSearchMissingFrames = 0;
+        feedReadyStability.reset();
+        feedSearchActionAttempts = 0;
+        feedSearchInputAttempts = 0;
+        feedSearchOpenConfirmationFrames = 0;
+        feedSearchTextConfirmationFrames = 0;
+        feedSearchResetPhase = FeedSearchResetPhase.NONE;
+        feedSearchKeyboardGuard.reset();
+        feedNectarCandidate = null;
+        feedNectarCandidateFrames = 0;
+        feedNectarTapAttempts = 0;
+        feedPanelCloseWaitFrames = 0;
+        feedPanelClosedConfirmationFrames = 0;
+        feedDetailCloseAttempts = 0;
+        feedNectarBeforeRound = -1;
+        feedCollectAfterCount = false;
+        feedNoEffectStartedAt = 0L;
+        feedZoomReady = false;
+        feedCollectedPetals = 0;
+        feedCollectReturningFromDetail = false;
+        feedCollectReturningFromShare = false;
+        feedCollectReturnFrames = 0;
+        resetFeedSpiralState();
+        resetFeedHoldState();
         automationStep = AutomationStep.CHECKING_PLANTING_ENTRY;
         targetFlower = "";
         actionAttempts = 0;
@@ -4792,27 +7660,32 @@ public final class PetalAccessibilityService extends AccessibilityService {
         }
         hideFloatingNotice();
 
-        TextView notice = formText(message, 12, Color.WHITE);
+        TextView notice = formText(message, 11, Color.WHITE);
         notice.setMaxLines(3);
+        notice.setMaxWidth(dp(NOTICE_MAX_WIDTH_DP));
         notice.setEllipsize(android.text.TextUtils.TruncateAt.END);
         notice.setGravity(Gravity.CENTER_VERTICAL);
-        notice.setPadding(dp(10), dp(6), dp(10), dp(6));
-        notice.setBackground(roundedBackground(OVERLAY_GREEN, 0, 10));
+        notice.setIncludeFontPadding(false);
+        notice.setLineSpacing(0, 0.95f);
+        notice.setPadding(dp(7), dp(3), dp(7), dp(3));
+        notice.setBackground(roundedBackground(OVERLAY_GREEN, 0, 8));
         notice.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         notice.setContentDescription(message);
 
+        notice.measure(
+                View.MeasureSpec.makeMeasureSpec(dp(NOTICE_MAX_WIDTH_DP), View.MeasureSpec.AT_MOST),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+
         WindowManager.LayoutParams params = new WindowManager.LayoutParams(
-                WindowManager.LayoutParams.WRAP_CONTENT,
-                WindowManager.LayoutParams.WRAP_CONTENT,
+                notice.getMeasuredWidth(),
+                notice.getMeasuredHeight(),
                 WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                         | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
                         | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
                 android.graphics.PixelFormat.TRANSLUCENT);
         params.gravity = Gravity.TOP | Gravity.START;
-        int maxX = Math.max(dp(8), getResources().getDisplayMetrics().widthPixels - dp(230));
-        params.x = Math.min(maxX, overlayParams.x + dp(44));
-        params.y = Math.max(dp(16), overlayParams.y);
+        positionFloatingNotice(params);
         if (!safeAddOverlayView(notice, params, "notice")) {
             return;
         }
@@ -4824,6 +7697,37 @@ public final class PetalAccessibilityService extends AccessibilityService {
         }
     }
 
+    /** 將緊縮狀態文字放在 ICON 左右同一水平列。 */
+    private void positionFloatingNotice(WindowManager.LayoutParams params) {
+        android.util.DisplayMetrics metrics = getResources().getDisplayMetrics();
+        params.x = OverlayWindowPolicy.horizontalNoticeX(
+                overlayParams.x,
+                dp(OVERLAY_SIZE_DP),
+                params.width,
+                metrics.widthPixels,
+                dp(NOTICE_GAP_DP),
+                dp(NOTICE_EDGE_DP));
+        params.y = OverlayWindowPolicy.centeredNoticeY(
+                overlayParams.y,
+                dp(OVERLAY_SIZE_DP),
+                params.height,
+                metrics.heightPixels,
+                dp(NOTICE_EDGE_DP));
+    }
+
+    /** 拖曳 ICON 時讓狀態文字維持水平相鄰。 */
+    private void updateFloatingNoticePosition() {
+        if (noticeOverlay == null || noticeParams == null || !noticeOverlay.isAttachedToWindow()) {
+            return;
+        }
+        positionFloatingNotice(noticeParams);
+        try {
+            windowManager.updateViewLayout(noticeOverlay, noticeParams);
+        } catch (RuntimeException exception) {
+            Log.w(TAG, "Unable to move notice overlay", exception);
+        }
+    }
+
     /** 移除目前提示，避免提示文字出現在後續 OCR 截圖中。 */
     private void hideFloatingNotice() {
         handler.removeCallbacks(hideFloatingNoticeTask);
@@ -4831,6 +7735,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
         noticeOverlay = null;
         noticeParams = null;
     }
+
 
     /** 顯示經 OCR 確認的目前花名與花瓣餘量。 */
     private void showPlantingStatus(String flower, int remaining) {
@@ -4850,7 +7755,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
                 warning ? getString(R.string.overlay_error_detail) : "");
     }
 
-    /** 將流程狀態收斂到 32dp 圖示的邊框與無障礙描述。 */
+    /** 將既有流程狀態投影到收合列，不新增或改寫任何自動化判斷。 */
     private void setRunStatus(
             AutomationMode mode,
             OverlayRunStatus.Kind kind,
@@ -4862,6 +7767,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
             return;
         }
         int stageResource = switch (mode) {
+            case FEED -> R.string.overlay_stage_feed;
             case POSTCARD -> R.string.overlay_stage_postcard;
             case DISPATCH -> R.string.overlay_stage_reward;
             case RETURN_REWARD -> R.string.overlay_stage_return_reward;
@@ -4893,10 +7799,9 @@ public final class PetalAccessibilityService extends AccessibilityService {
         if (overlay == null) {
             return;
         }
-        int tone = plantingNoticeStatus == null
-                ? OVERLAY_GREEN
-                : runStatusTone(plantingNoticeStatus.kind());
-        overlay.setBackground(roundedBackground(OVERLAY_SURFACE, tone, 10));
+        // 只更新無障礙狀態，不用邊框、陰影或深色容器暗示流程狀態。
+        overlay.setBackground(null);
+        overlay.setElevation(0);
         String description = plantingNoticeStatus == null
                 ? getString(running
                         ? R.string.overlay_stop_description
@@ -4921,7 +7826,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
         };
     }
 
-    /** 停止自動化時清除狀態，並把 32dp 圖示恢復成待命色。 */
+    /** 停止自動化時清除狀態，並把收合列恢復成待命狀態。 */
     private void clearPlantingNotice() {
         plantingNoticeStatus = null;
         hideFloatingNotice();
@@ -5154,20 +8059,24 @@ public final class PetalAccessibilityService extends AccessibilityService {
                 11));
     }
 
-    /** Concept v2 的數字步進列，同時保留鍵盤直接輸入。 */
+    /** 預覽稿的直接數字輸入；範圍仍由既有解析與儲存流程驗證。 */
     private final class StepperField extends LinearLayout {
         private final EditText input;
-        private final int minimum;
-        private final int maximum;
-        private final String label;
 
         StepperField(String label, String helper, int initialValue, int minimum, int maximum) {
+            this(label, helper, initialValue, minimum, maximum, 1);
+        }
+
+        StepperField(
+                String label,
+                String helper,
+                int initialValue,
+                int minimum,
+                int maximum,
+                int step) {
             super(PetalAccessibilityService.this);
-            this.label = label;
-            this.minimum = minimum;
-            this.maximum = maximum;
             setGravity(Gravity.CENTER_VERTICAL);
-            setPadding(dp(14), dp(8), dp(10), dp(8));
+            setPadding(dp(14), dp(10), dp(10), dp(10));
             setBackground(roundedBackground(Color.WHITE, OVERLAY_BORDER, 14));
 
             LinearLayout copy = new LinearLayout(PetalAccessibilityService.this);
@@ -5180,21 +8089,13 @@ public final class PetalAccessibilityService extends AccessibilityService {
             addView(copy, new LinearLayout.LayoutParams(
                     0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
-            Button decrease = compactIconButton("−", getString(R.string.overlay_decrease));
-            decrease.setOnClickListener(view -> adjust(-1));
-            addView(decrease, new LinearLayout.LayoutParams(dp(48), dp(48)));
-
             input = numberField(initialValue);
             input.setGravity(Gravity.CENTER);
-            input.setPadding(dp(2), 0, dp(2), 0);
+            input.setPadding(dp(8), 0, dp(8), 0);
             input.setContentDescription(getString(
                     R.string.overlay_value_description, label, initialValue));
-            input.setBackgroundColor(Color.TRANSPARENT);
-            addView(input, new LinearLayout.LayoutParams(dp(58), dp(48)));
-
-            Button increase = compactIconButton("+", getString(R.string.overlay_increase));
-            increase.setOnClickListener(view -> adjust(1));
-            addView(increase, new LinearLayout.LayoutParams(dp(48), dp(48)));
+            input.setBackground(roundedBackground(Color.rgb(246, 248, 246), OVERLAY_BORDER, 10));
+            addView(input, new LinearLayout.LayoutParams(dp(76), dp(48)));
         }
 
         String valueText() {
@@ -5203,22 +8104,6 @@ public final class PetalAccessibilityService extends AccessibilityService {
 
         EditText input() {
             return input;
-        }
-
-        private void adjust(int delta) {
-            int current;
-            try {
-                current = Integer.parseInt(input.getText().toString().trim());
-            } catch (NumberFormatException exception) {
-                current = minimum;
-            }
-            int next = Math.max(minimum, Math.min(maximum, current + delta));
-            input.setText(String.valueOf(next));
-            input.setSelection(input.length());
-            input.setContentDescription(getString(
-                    R.string.overlay_value_description, label, next));
-            input.announceForAccessibility(getString(
-                    R.string.overlay_value_description, label, next));
         }
     }
 
@@ -5399,6 +8284,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
      */
     private final class FlowerOrderEditor extends LinearLayout {
         private final PetalSelection selection;
+        private final boolean nectarLabels;
         private final LinearLayout selectedRows;
         private final List<Button> colorButtons = new ArrayList<>();
         private final Spinner flowerSpinner;
@@ -5407,9 +8293,14 @@ public final class PetalAccessibilityService extends AccessibilityService {
         private int selectedCategoryIndex;
 
         FlowerOrderEditor(List<String> flowers) {
+            this(flowers, false);
+        }
+
+        FlowerOrderEditor(List<String> flowers, boolean nectarLabels) {
             super(PetalAccessibilityService.this);
             setOrientation(VERTICAL);
             selection = new PetalSelection(flowers);
+            this.nectarLabels = nectarLabels;
 
             selectedRows = new LinearLayout(PetalAccessibilityService.this);
             selectedRows.setOrientation(VERTICAL);
@@ -5550,7 +8441,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
             number.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
             row.addView(number, new LinearLayout.LayoutParams(dp(28), dp(48)));
 
-            TextView flower = formText(selection.get(index), 14, Color.rgb(35, 75, 54));
+            TextView flower = formText(displayName(selection.get(index)), 14, Color.rgb(35, 75, 54));
             flower.setContentDescription(getString(
                     R.string.overlay_flower_item_description, index + 1));
             row.addView(flower, new LinearLayout.LayoutParams(0, dp(48), 1f));
@@ -5577,6 +8468,19 @@ public final class PetalAccessibilityService extends AccessibilityService {
                 rowParams.topMargin = dp(6);
             }
             selectedRows.addView(row, rowParams);
+        }
+
+        private String displayName(String value) {
+            if (!nectarLabels) {
+                return value;
+            }
+            return switch (value) {
+                case "白色花瓣" -> "白色精華";
+                case "黃色花瓣" -> "黃色精華";
+                case "紅色花瓣" -> "紅色精華";
+                case "藍色花瓣" -> "藍色精華";
+                default -> value;
+            };
         }
 
         private void move(int index, int delta) {
@@ -5608,6 +8512,73 @@ public final class PetalAccessibilityService extends AccessibilityService {
         return button;
     }
 
+    private boolean isInsideOverlay(View view, float screenX, float screenY) {
+        if (view == null || !view.isAttachedToWindow()) {
+            return false;
+        }
+        int[] location = new int[2];
+        view.getLocationOnScreen(location);
+        return screenX >= location[0]
+                && screenX < location[0] + view.getWidth()
+                && screenY >= location[1]
+                && screenY < location[1] + view.getHeight();
+    }
+
+    /** The first stationary tap after Start selects the reward detector ROI. */
+    private final class ReturnRewardAnchorTouchListener implements View.OnTouchListener {
+        private float downX;
+        private float downY;
+        private boolean moved;
+
+        @Override
+        public boolean onTouch(View view, MotionEvent event) {
+            if (event.getAction() == MotionEvent.ACTION_DOWN) {
+                downX = event.getRawX();
+                downY = event.getRawY();
+                moved = false;
+                return true;
+            }
+            if (event.getAction() == MotionEvent.ACTION_MOVE) {
+                moved = moved
+                        || Math.abs(event.getRawX() - downX) > dp(12)
+                        || Math.abs(event.getRawY() - downY) > dp(12);
+                return true;
+            }
+            if (event.getAction() == MotionEvent.ACTION_UP) {
+                if (!moved) {
+                    if (isInsideOverlay(overlay, event.getRawX(), event.getRawY())) {
+                        pause(getString(R.string.status_paused));
+                    } else {
+                        armReturnRewardRoi(
+                                Math.round(event.getRawX()), Math.round(event.getRawY()));
+                    }
+                    view.performClick();
+                }
+                return true;
+            }
+            return event.getAction() == MotionEvent.ACTION_CANCEL;
+        }
+    }
+
+    /** Non-touchable screen frame showing the active return-reward detector area. */
+    private final class ReturnRewardRoiView extends View {
+        private final Paint outline = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+        ReturnRewardRoiView() {
+            super(PetalAccessibilityService.this);
+            outline.setColor(Color.rgb(255, 96, 48));
+            outline.setStyle(Paint.Style.STROKE);
+            outline.setStrokeWidth(dp(3));
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            float inset = outline.getStrokeWidth() / 2f;
+            canvas.drawRect(inset, inset, getWidth() - inset, getHeight() - inset, outline);
+        }
+    }
+
     /** 只在標題列接收拖曳，避免誤觸開始與設定按鈕。 */
     private final class DragListener implements View.OnTouchListener {
         private int startX;
@@ -5636,6 +8607,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
                 if (overlay != null && overlay.isAttachedToWindow()) {
                     try {
                         windowManager.updateViewLayout(overlay, overlayParams);
+                        updateFloatingNoticePosition();
                     } catch (RuntimeException exception) {
                         Log.w(TAG, "Unable to move icon overlay", exception);
                     }
@@ -5663,4 +8635,5 @@ public final class PetalAccessibilityService extends AccessibilityService {
             return super.performClick();
         }
     }
+
 }

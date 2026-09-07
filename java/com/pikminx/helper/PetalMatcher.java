@@ -6,6 +6,8 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.function.ToIntFunction;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /** 將 OCR token 配對到花瓣名稱，並以花盆右下角數字作為剩餘量。 */
 final class PetalMatcher {
@@ -18,6 +20,20 @@ final class PetalMatcher {
 
     record PanelPull(int x, int startY, int endY) {}
 
+    record SearchResultScroll(int startX, int startY, int endX, int endY) {}
+
+    static final int PLANTING_SEARCH_SCROLL_COUNT = 3;
+
+    /** 四色基礎花盆位於搜尋結果前方，不需捲動。 */
+    static int plantingSearchScrollCount(String flower) {
+        String canonical = PetalCatalog.canonicalName(flower);
+        PostcardPotCatalog.Color color = PostcardPotCatalog.colorOf(canonical);
+        return color != null && (color.label() + "花瓣").equals(canonical)
+                ? 0 : PLANTING_SEARCH_SCROLL_COUNT;
+    }
+    private static final Pattern SEARCH_LABEL_SEGMENT =
+            Pattern.compile("[^\\p{Z}\\s|]+");
+
     /** 由畫面中央上拉高度的 20%，讓花盆搜尋列進入固定位置。 */
     static PanelPull plantingPanelPull(int width, int height) {
         int startY = Math.round(height * 0.60f);
@@ -25,6 +41,15 @@ final class PetalMatcher {
                 Math.round(width * 0.50f),
                 startY,
                 startY - Math.round(height * 0.20f));
+    }
+
+    /** 使用餵食精華的向上拖曳比例，將搜尋結果清單連續往後捲動。 */
+    static SearchResultScroll plantingSearchResultScroll(int width, int height) {
+        return new SearchResultScroll(
+                Math.round(width * 0.52f),
+                Math.round(height * 0.90f),
+                Math.round(width * 0.50f),
+                Math.round(height * 0.54f));
     }
 
     /** 從目前畫面找出序列中第一個仍高於門檻的可見花盆。 */
@@ -78,27 +103,30 @@ final class PetalMatcher {
         return findVisibleFlower(tokens, name, width, height);
     }
 
-    /** 搜尋框文字確認後，只接受完整目標名稱及其同欄右下數量；其他搜尋結果不影響判斷。 */
+    /** 搜尋框文字確認後，只接受搜尋框下方的完整目標名稱及其同欄右下數量。 */
     static Selection findSearchedFlower(
             List<Token> tokens,
             String searchedFlower,
             int minimumCount,
             int width,
-            int height) {
+            int height,
+            int searchResultsTop) {
         String canonical = PetalCatalog.canonicalName(searchedFlower);
         if (canonical == null) {
             return null;
         }
+        float minimumLabelY = Math.max(0, Math.min(height, searchResultsTop)) / (float) height;
+        List<Token> searchableTokens = searchableFlowerTokens(tokens, canonical);
         PetalPotDetector.Match match = PetalPotDetector.find(
-                tokens,
+                searchableTokens,
                 canonical,
                 minimumCount,
                 width,
                 height,
-                0.53f,
-                0.96f,
-                0.16f,
-                0.20f,
+                minimumLabelY,
+                1f,
+                0.15f,
+                0.085f,
                 PetalMatcher::flowerNameKey);
         return match == null
                 ? null
@@ -108,6 +136,43 @@ final class PetalMatcher {
                         match.x(),
                         match.labelY(),
                         Math.max(0, match.labelTop() - Math.round(height * 0.075f)));
+    }
+
+    /** ML Kit 偶爾會把同列多張卡片名稱合為一個 token；只拆同 token 的水平文字片段。 */
+    private static List<Token> searchableFlowerTokens(List<Token> tokens, String targetFlower) {
+        String targetKey = flowerNameKey(targetFlower);
+        List<Token> expanded = new ArrayList<>(tokens);
+        for (Token token : tokens) {
+            String text = token.text();
+            if (text == null || text.isBlank()) {
+                continue;
+            }
+            Matcher matcher = SEARCH_LABEL_SEGMENT.matcher(text);
+            List<Token> matchingSegments = new ArrayList<>();
+            int segmentCount = 0;
+            while (matcher.find()) {
+                segmentCount++;
+                String segment = matcher.group();
+                if (!flowerNameKey(segment).equals(targetKey)) {
+                    continue;
+                }
+                int tokenWidth = Math.max(1, token.right() - token.left());
+                int segmentLeft = token.left()
+                        + Math.round(tokenWidth * (matcher.start() / (float) text.length()));
+                int segmentRight = token.left()
+                        + Math.round(tokenWidth * (matcher.end() / (float) text.length()));
+                matchingSegments.add(new Token(
+                        segment,
+                        segmentLeft,
+                        token.top(),
+                        Math.max(segmentLeft + 1, segmentRight),
+                        token.bottom()));
+            }
+            if (segmentCount > 1) {
+                expanded.addAll(matchingSegments);
+            }
+        }
+        return expanded;
     }
 
     /** Returns true when the selected pot has been changed away from the expected flower. */
@@ -215,8 +280,8 @@ final class PetalMatcher {
                 height,
                 0.22f,
                 0.99f,
-                0.18f,
-                0.10f,
+                0.15f,
+                0.085f,
                 PetalMatcher::flowerNameKey);
         if (match == null) {
             return null;
@@ -231,10 +296,54 @@ final class PetalMatcher {
                 Math.max(0, match.labelTop() - Math.round(height * 0.075f)));
     }
 
-    /** 目錄內花朵套用與明信片相同的單一 token OCR 校正；舊測試名稱仍可正規化。 */
+    /** 目錄內花朵先精確校正；搜尋結果才容許唯一且有限的中文字形誤識。 */
     private static String flowerNameKey(String value) {
         String canonical = PetalCatalog.canonicalName(value);
-        return normalize(canonical == null ? value : canonical);
+        if (canonical != null) {
+            return normalize(canonical);
+        }
+        String observed = normalizeFlowerColor(value);
+        String best = null;
+        int bestDistance = Integer.MAX_VALUE;
+        boolean unique = false;
+        for (String flower : PetalCatalog.petals()) {
+            String candidate = normalize(flower);
+            if (candidate.length() != observed.length()
+                    || candidate.length() < 2
+                    || !candidate.substring(0, 2).equals(observed.substring(0, 2))) {
+                continue;
+            }
+            int allowedDistance = candidate.length() >= 8 ? 2 : 1;
+            int distance = differingCharacters(observed, candidate, allowedDistance);
+            if (distance < bestDistance) {
+                best = candidate;
+                bestDistance = distance;
+                unique = true;
+            } else if (distance == bestDistance && !candidate.equals(best)) {
+                unique = false;
+            }
+        }
+        int allowedDistance = observed.length() >= 8 ? 2 : 1;
+        return unique && bestDistance <= allowedDistance ? best : observed;
+    }
+
+    private static String normalizeFlowerColor(String value) {
+        return normalize(value)
+                // Live planting OCR reads 藍色 as 籃色; correct only the color prefix.
+                .replaceFirst("^籃色", "藍色")
+                .replace('黄', '黃')
+                .replace('红', '紅')
+                .replace('蓝', '藍');
+    }
+
+    private static int differingCharacters(String first, String second, int stopAfter) {
+        int differences = 0;
+        for (int index = 0; index < first.length(); index++) {
+            if (first.charAt(index) != second.charAt(index) && ++differences > stopAfter) {
+                return differences;
+            }
+        }
+        return differences;
     }
 
     /** 找出與目標名稱相符且位於遊戲花盆區域的文字 token。 */

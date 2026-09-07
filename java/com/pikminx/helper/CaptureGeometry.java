@@ -74,4 +74,32 @@ final class CaptureGeometry {
     long capturedAtUptimeMillis() { return capturedAtUptimeMillis; }
     float scaleX() { return expectedSourceBoundsOnScreen.width() / (float) bitmapWidth; }
     float scaleY() { return expectedSourceBoundsOnScreen.height() / (float) bitmapHeight; }
+
+    boolean matchesBitmap(int width, int height) {
+        return width == bitmapWidth && height == bitmapHeight;
+    }
+
+    boolean isActionSafe(OcrScan.Transform transform) {
+        if (transform == null
+                || !matchesBitmap(transform.sourceWidth(), transform.sourceHeight())
+                || transform.captureSequence() != captureSequence) {
+            return false;
+        }
+        if (mode == Mode.WINDOW && !expectedSourceBoundsOnScreen.equals(targetWindowBoundsOnScreen)) {
+            return false;
+        }
+        if (transform.roiBasis() != OcrScan.RoiBasis.TARGET_WINDOW) {
+            return true;
+        }
+        if (transform.fallbackToScreenshot() || targetWindowBoundsOnScreen == null) {
+            return false;
+        }
+        ScreenCoordinateTransform.ScreenshotRect target =
+                ScreenCoordinateTransform.targetWindowInScreenshot(this);
+        return target != null
+                && transform.basisLeft() == target.left()
+                && transform.basisTop() == target.top()
+                && transform.basisRight() == target.right()
+                && transform.basisBottom() == target.bottom();
+    }
 }
