@@ -1,7 +1,7 @@
 package com.pikminx.helper;
 
 /** 派遣隊伍的顏色限制；MIXED 不操作顏色篩選。 */
-enum DispatchPikminType {
+public enum DispatchPikminType {
     MIXED,
     RED,
     YELLOW,
@@ -26,7 +26,7 @@ enum DispatchPikminType {
         };
     }
 
-    static DispatchPikminType fromStored(String value) {
+    public static DispatchPikminType fromStored(String value) {
         if (value == null) return MIXED;
         try {
             return valueOf(value);

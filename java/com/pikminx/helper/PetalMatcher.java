@@ -22,6 +22,44 @@ final class PetalMatcher {
 
     record SearchResultScroll(int startX, int startY, int endX, int endY) {}
 
+    /** Immutable name-key lookup for one OCR frame. */
+    static final class TokenKeyIndex {
+        private final List<Token> tokens;
+        private final List<String> keys;
+
+        private TokenKeyIndex(List<Token> tokens) {
+            this(tokens, null);
+        }
+
+        private TokenKeyIndex(List<Token> tokens, List<String> keys) {
+            this.tokens = tokens == null ? List.of() : List.copyOf(tokens);
+            if (keys != null) {
+                if (keys.size() != this.tokens.size()) {
+                    throw new IllegalArgumentException("Token keys must match token count");
+                }
+                this.keys = List.copyOf(keys);
+                return;
+            }
+            List<String> computedKeys = new ArrayList<>(this.tokens.size());
+            for (Token token : this.tokens) {
+                computedKeys.add(flowerNameKey(token.text()));
+            }
+            this.keys = List.copyOf(computedKeys);
+        }
+
+        List<Token> tokens() {
+            return tokens;
+        }
+
+        List<String> keys() {
+            return keys;
+        }
+    }
+
+    static TokenKeyIndex indexTokens(List<Token> tokens) {
+        return new TokenKeyIndex(tokens);
+    }
+
     static final int PLANTING_SEARCH_SCROLL_COUNT = 3;
 
     /** 四色基礎花盆位於搜尋結果前方，不需捲動。 */
@@ -103,6 +141,11 @@ final class PetalMatcher {
         return findVisibleFlower(tokens, name, width, height);
     }
 
+    /** Uses the precomputed name keys for the current OCR frame. */
+    static Selection findFlower(TokenKeyIndex index, String name, int width, int height) {
+        return findVisibleFlower(index, name, width, height);
+    }
+
     /** 搜尋框文字確認後，只接受搜尋框下方的完整目標名稱及其同欄右下數量。 */
     static Selection findSearchedFlower(
             List<Token> tokens,
@@ -116,18 +159,19 @@ final class PetalMatcher {
             return null;
         }
         float minimumLabelY = Math.max(0, Math.min(height, searchResultsTop)) / (float) height;
-        List<Token> searchableTokens = searchableFlowerTokens(tokens, canonical);
-        PetalPotDetector.Match match = PetalPotDetector.find(
-                searchableTokens,
-                canonical,
+        String targetKey = flowerNameKey(canonical);
+        TokenKeyIndex searchableTokens = searchableFlowerTokens(tokens, targetKey);
+        PetalPotDetector.Match match = PetalPotDetector.findWithKeys(
+                searchableTokens.tokens(),
+                searchableTokens.keys(),
+                targetKey,
                 minimumCount,
                 width,
                 height,
                 minimumLabelY,
                 1f,
                 0.15f,
-                0.085f,
-                PetalMatcher::flowerNameKey);
+                0.085f);
         return match == null
                 ? null
                 : new Selection(
@@ -139,9 +183,12 @@ final class PetalMatcher {
     }
 
     /** ML Kit 偶爾會把同列多張卡片名稱合為一個 token；只拆同 token 的水平文字片段。 */
-    private static List<Token> searchableFlowerTokens(List<Token> tokens, String targetFlower) {
-        String targetKey = flowerNameKey(targetFlower);
+    static TokenKeyIndex searchableFlowerTokens(List<Token> tokens, String targetKey) {
         List<Token> expanded = new ArrayList<>(tokens);
+        List<String> keys = new ArrayList<>(tokens.size());
+        for (Token token : tokens) {
+            keys.add(flowerNameKey(token.text()));
+        }
         for (Token token : tokens) {
             String text = token.text();
             if (text == null || text.isBlank()) {
@@ -149,11 +196,13 @@ final class PetalMatcher {
             }
             Matcher matcher = SEARCH_LABEL_SEGMENT.matcher(text);
             List<Token> matchingSegments = new ArrayList<>();
+            List<String> matchingSegmentKeys = new ArrayList<>();
             int segmentCount = 0;
             while (matcher.find()) {
                 segmentCount++;
                 String segment = matcher.group();
-                if (!flowerNameKey(segment).equals(targetKey)) {
+                String segmentKey = flowerNameKey(segment);
+                if (!segmentKey.equals(targetKey)) {
                     continue;
                 }
                 int tokenWidth = Math.max(1, token.right() - token.left());
@@ -167,12 +216,14 @@ final class PetalMatcher {
                         token.top(),
                         Math.max(segmentLeft + 1, segmentRight),
                         token.bottom()));
+                matchingSegmentKeys.add(segmentKey);
             }
             if (segmentCount > 1) {
                 expanded.addAll(matchingSegments);
+                keys.addAll(matchingSegmentKeys);
             }
         }
-        return expanded;
+        return new TokenKeyIndex(expanded, keys);
     }
 
     /** Returns true when the selected pot has been changed away from the expected flower. */
@@ -212,6 +263,20 @@ final class PetalMatcher {
             List<Token> tokens, List<String> knownFlowers, int width, int height) {
         for (String flower : knownFlowers) {
             if (findVisibleFlower(tokens, flower, width, height) != null) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Uses the precomputed name keys for the current OCR frame. */
+    static boolean hasVisibleFlowerCard(
+            TokenKeyIndex index, List<String> knownFlowers, int width, int height) {
+        if (index == null || knownFlowers == null) {
+            return false;
+        }
+        for (String flower : knownFlowers) {
+            if (findVisibleFlower(index, flower, width, height) != null) {
                 return true;
             }
         }
@@ -269,6 +334,40 @@ final class PetalMatcher {
                 : null;
     }
 
+    /** Uses the precomputed name keys for the current OCR frame. */
+    static Selection findHighlightedFlower(
+            TokenKeyIndex index,
+            List<String> allowed,
+            int width,
+            int height,
+            ToIntFunction<Selection> backgroundScore) {
+        if (index == null || allowed == null || backgroundScore == null) {
+            return null;
+        }
+        Selection best = null;
+        int bestScore = -1;
+        int secondScore = -1;
+        for (String allowedName : allowed) {
+            Selection candidate = findVisibleFlower(index, allowedName, width, height);
+            if (candidate == null) {
+                continue;
+            }
+            int score = backgroundScore.applyAsInt(candidate);
+            if (score > bestScore) {
+                secondScore = bestScore;
+                bestScore = score;
+                best = candidate;
+            } else {
+                secondScore = Math.max(secondScore, score);
+            }
+        }
+        return best != null
+                && bestScore >= 245
+                && (secondScore < 0 || bestScore - secondScore >= 8)
+                ? best
+                : null;
+    }
+
     /** 將名稱 token 與右下方數量 token 組成花盆選擇結果。 */
     private static Selection findVisibleFlower(
             List<Token> tokens, String allowedName, int width, int height) {
@@ -296,8 +395,37 @@ final class PetalMatcher {
                 Math.max(0, match.labelTop() - Math.round(height * 0.075f)));
     }
 
+    private static Selection findVisibleFlower(
+            TokenKeyIndex index, String allowedName, int width, int height) {
+        if (index == null) {
+            return null;
+        }
+        String canonical = PetalCatalog.canonicalName(allowedName);
+        String displayName = canonical == null ? allowedName : canonical;
+        String targetKey = flowerNameKey(allowedName);
+        PetalPotDetector.Match match = PetalPotDetector.findWithKeys(
+                index.tokens(),
+                index.keys(),
+                targetKey,
+                0,
+                width,
+                height,
+                0.22f,
+                0.99f,
+                0.15f,
+                0.085f);
+        return match == null
+                ? null
+                : new Selection(
+                        displayName,
+                        match.count(),
+                        match.x(),
+                        match.labelY(),
+                        Math.max(0, match.labelTop() - Math.round(height * 0.075f)));
+    }
+
     /** 目錄內花朵先精確校正；搜尋結果才容許唯一且有限的中文字形誤識。 */
-    private static String flowerNameKey(String value) {
+    static String flowerNameKey(String value) {
         String canonical = PetalCatalog.canonicalName(value);
         if (canonical != null) {
             return normalize(canonical);

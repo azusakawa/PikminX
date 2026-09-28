@@ -7,18 +7,18 @@ package com.pikminx.helper;
  * the buffer origin or bounds. {@code expectedSourceBoundsOnScreen} is therefore the geometry
  * this app uses to map this bitmap, not API-confirmed screenshot metadata.</p>
  */
-final class CaptureGeometry {
-    enum Mode { WINDOW, DISPLAY }
+public final class CaptureGeometry {
+    public enum Mode { WINDOW, DISPLAY }
 
-    record Bounds(int left, int top, int right, int bottom) {
-        Bounds {
+    public record Bounds(int left, int top, int right, int bottom) {
+        public Bounds {
             if (right <= left || bottom <= top) {
                 throw new IllegalArgumentException("Bounds must have positive size");
             }
         }
 
-        int width() { return right - left; }
-        int height() { return bottom - top; }
+        public int width() { return right - left; }
+        public int height() { return bottom - top; }
 
         Bounds intersection(Bounds other) {
             int intersectionLeft = Math.max(left, other.left);
@@ -39,16 +39,36 @@ final class CaptureGeometry {
     private final Bounds expectedSourceBoundsOnScreen;
     private final Bounds targetWindowBoundsOnScreen;
     private final int displayId;
+    private final int windowId;
     private final long captureSequence;
     private final long capturedAtUptimeMillis;
 
     CaptureGeometry(Mode mode, int bitmapWidth, int bitmapHeight,
             Bounds expectedSourceBoundsOnScreen, Bounds targetWindowBoundsOnScreen,
             int displayId, long captureSequence, long capturedAtUptimeMillis) {
+        this(
+                mode,
+                bitmapWidth,
+                bitmapHeight,
+                expectedSourceBoundsOnScreen,
+                targetWindowBoundsOnScreen,
+                displayId,
+                -1,
+                captureSequence,
+                capturedAtUptimeMillis);
+    }
+
+    CaptureGeometry(Mode mode, int bitmapWidth, int bitmapHeight,
+            Bounds expectedSourceBoundsOnScreen, Bounds targetWindowBoundsOnScreen,
+            int displayId, int windowId, long captureSequence, long capturedAtUptimeMillis) {
         if (mode == null || expectedSourceBoundsOnScreen == null) {
             throw new IllegalArgumentException("Capture mode and expected bounds are required");
         }
-        if (bitmapWidth <= 0 || bitmapHeight <= 0 || displayId < 0 || captureSequence < 1) {
+        if (bitmapWidth <= 0
+                || bitmapHeight <= 0
+                || displayId < 0
+                || windowId < -1
+                || captureSequence < 1) {
             throw new IllegalArgumentException("Invalid capture geometry");
         }
         if (mode == Mode.WINDOW && targetWindowBoundsOnScreen == null) {
@@ -60,20 +80,22 @@ final class CaptureGeometry {
         this.expectedSourceBoundsOnScreen = expectedSourceBoundsOnScreen;
         this.targetWindowBoundsOnScreen = targetWindowBoundsOnScreen;
         this.displayId = displayId;
+        this.windowId = windowId;
         this.captureSequence = captureSequence;
         this.capturedAtUptimeMillis = capturedAtUptimeMillis;
     }
 
-    Mode mode() { return mode; }
-    int bitmapWidth() { return bitmapWidth; }
-    int bitmapHeight() { return bitmapHeight; }
-    Bounds expectedSourceBoundsOnScreen() { return expectedSourceBoundsOnScreen; }
-    Bounds targetWindowBoundsOnScreen() { return targetWindowBoundsOnScreen; }
-    int displayId() { return displayId; }
-    long captureSequence() { return captureSequence; }
-    long capturedAtUptimeMillis() { return capturedAtUptimeMillis; }
-    float scaleX() { return expectedSourceBoundsOnScreen.width() / (float) bitmapWidth; }
-    float scaleY() { return expectedSourceBoundsOnScreen.height() / (float) bitmapHeight; }
+    public Mode mode() { return mode; }
+    public int bitmapWidth() { return bitmapWidth; }
+    public int bitmapHeight() { return bitmapHeight; }
+    public Bounds expectedSourceBoundsOnScreen() { return expectedSourceBoundsOnScreen; }
+    public Bounds targetWindowBoundsOnScreen() { return targetWindowBoundsOnScreen; }
+    public int displayId() { return displayId; }
+    public int windowId() { return windowId; }
+    public long captureSequence() { return captureSequence; }
+    public long capturedAtUptimeMillis() { return capturedAtUptimeMillis; }
+    public float scaleX() { return expectedSourceBoundsOnScreen.width() / (float) bitmapWidth; }
+    public float scaleY() { return expectedSourceBoundsOnScreen.height() / (float) bitmapHeight; }
 
     boolean matchesBitmap(int width, int height) {
         return width == bitmapWidth && height == bitmapHeight;

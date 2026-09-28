@@ -1,6 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- 應用程式宣告主設定 Activity 與 Pikmin Bloom 專用無障礙服務。 -->
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Required in the release manifest so Android can list PikminX as a mock-location candidate. -->
+    <uses-permission
+        android:name="android.permission.ACCESS_MOCK_LOCATION"
+        tools:ignore="MockLocation" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
     <queries>
         <package android:name="com.nianticlabs.pikmin" />
     </queries>
@@ -35,5 +45,8 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/accessibility_service_config" />
         </service>
+        <receiver
+            android:name=".UpdateInstallReceiver"
+            android:exported="false" />
     </application>
 </manifest>

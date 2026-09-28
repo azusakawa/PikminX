@@ -15,7 +15,19 @@ final class NectarTemplateMatcher {
 
     record Evidence(Status status, float expectedScore, float bestScore) {}
 
+    record MatchContext(
+            long runGeneration,
+            long captureSequence,
+            long nowUptimeMillis,
+            String workflowState,
+            String candidateIdentity,
+            CaptureGeometry.Bounds windowBounds,
+            int windowId) {}
+
+    record MatchStats(long fullMatchExecutions, long cacheHits) {}
+
     private record Template(String assetName, int[] pixels, float[] centered, double energy) {}
+    private record Region(int left, int top, int right, int bottom) {}
 
     private static final String TAG = "PikminX";
     private static final String ASSET_DIRECTORY = "nectar_templates";
@@ -31,12 +43,23 @@ final class NectarTemplateMatcher {
     private final Context context;
     private volatile Map<String, Template> templates;
     private volatile boolean loadFailed;
+    private final NectarTemplateMatchCache matchCache = new NectarTemplateMatchCache();
+    private long fullMatchExecutions;
 
     NectarTemplateMatcher(Context context) {
         this.context = context.getApplicationContext();
     }
 
     Evidence match(Bitmap screen, String target, int centerX, int centerY) {
+        return matchFull(screen, target, centerX, centerY);
+    }
+
+    Evidence match(
+            Bitmap screen,
+            String target,
+            int centerX,
+            int centerY,
+            MatchContext matchContext) {
         Map<String, Template> loaded = templates();
         String expectedAsset = assetNameFor(target);
         Template expected = loaded.get(expectedAsset);
@@ -45,6 +68,50 @@ final class NectarTemplateMatcher {
         }
 
         int side = Math.max(TEMPLATE_SIZE, Math.round(screen.getWidth() * ICON_SIZE_RATIO));
+        NectarTemplateMatchCache.Key cacheKey = cacheKey(
+                screen, expectedAsset, centerX, centerY, side, matchContext);
+        if (cacheKey != null) {
+            Evidence cached = matchCache.getIfReusable(
+                    cacheKey, matchContext.nowUptimeMillis());
+            if (cached != null) {
+                return cached;
+            }
+        }
+        Evidence evidence = matchLoaded(
+                screen, loaded, expectedAsset, centerX, centerY, side);
+        fullMatchExecutions++;
+        if (cacheKey != null) {
+            matchCache.put(cacheKey, evidence, matchContext.nowUptimeMillis());
+        }
+        return evidence;
+    }
+
+    MatchStats stats() {
+        return new MatchStats(fullMatchExecutions, matchCache.cacheHitCount());
+    }
+
+    void clearCache() {
+        matchCache.clear();
+    }
+
+    private Evidence matchFull(Bitmap screen, String target, int centerX, int centerY) {
+        Map<String, Template> loaded = templates();
+        String expectedAsset = assetNameFor(target);
+        if (loaded.get(expectedAsset) == null) {
+            return new Evidence(Status.UNAVAILABLE, 0f, 0f);
+        }
+        int side = Math.max(TEMPLATE_SIZE, Math.round(screen.getWidth() * ICON_SIZE_RATIO));
+        fullMatchExecutions++;
+        return matchLoaded(screen, loaded, expectedAsset, centerX, centerY, side);
+    }
+
+    private Evidence matchLoaded(
+            Bitmap screen,
+            Map<String, Template> loaded,
+            String expectedAsset,
+            int centerX,
+            int centerY,
+            int side) {
         float expectedScore = 0f;
         float bestScore = 0f;
         String bestAsset = "";
@@ -83,6 +150,69 @@ final class NectarTemplateMatcher {
         Status status = classify(
                 true, expectedScore, bestScore, expectedAsset.equals(bestAsset));
         return new Evidence(status, expectedScore, bestScore);
+    }
+
+    private NectarTemplateMatchCache.Key cacheKey(
+            Bitmap screen,
+            String expectedAsset,
+            int centerX,
+            int centerY,
+            int side,
+            MatchContext matchContext) {
+        if (matchContext == null
+                || matchContext.runGeneration() < 1L
+                || matchContext.captureSequence() < 1L
+                || matchContext.nowUptimeMillis() < 0L
+                || matchContext.workflowState() == null
+                || matchContext.workflowState().isBlank()
+                || matchContext.candidateIdentity() == null
+                || matchContext.candidateIdentity().isBlank()
+                || matchContext.windowBounds() == null) {
+            return null;
+        }
+        Region region = relevantRegion(screen, centerX, centerY, side);
+        if (region == null) {
+            return null;
+        }
+        return new NectarTemplateMatchCache.Key(
+                matchContext.runGeneration(),
+                matchContext.captureSequence(),
+                matchContext.workflowState(),
+                matchContext.candidateIdentity(),
+                expectedAsset,
+                centerX,
+                centerY,
+                screen.getWidth(),
+                screen.getHeight(),
+                side,
+                matchContext.windowBounds(),
+                matchContext.windowId(),
+                regionSignature(screen, region));
+    }
+
+    /** Hashes the exact union of all shift windows; no mutable Bitmap is retained. */
+    private static long regionSignature(Bitmap screen, Region region) {
+        long hash = 0xcbf29ce484222325L;
+        for (int y = region.top(); y < region.bottom(); y++) {
+            for (int x = region.left(); x < region.right(); x++) {
+                hash ^= screen.getPixel(x, y) & 0xffffffffL;
+                hash *= 0x100000001b3L;
+            }
+        }
+        return hash;
+    }
+
+    private static Region relevantRegion(Bitmap screen, int centerX, int centerY, int side) {
+        int left = centerX - side / 2 + Math.round(side * -4 / 80f);
+        int top = centerY - side / 2 + Math.round(side * -4 / 80f);
+        int right = centerX - side / 2 + Math.round(side * 4 / 80f) + side;
+        int bottom = centerY - side / 2 + Math.round(side * 4 / 80f) + side;
+        if (left < 0 || top < 0
+                || right > screen.getWidth()
+                || bottom > screen.getHeight()) {
+            return null;
+        }
+        return new Region(left, top, right, bottom);
     }
 
     static String assetNameFor(String target) {

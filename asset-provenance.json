@@ -1,0 +1,1414 @@
+{
+  "schemaVersion": 1,
+  "generatedOn": "2026-09-28",
+  "sourceRoot": "code/app/src/main/assets",
+  "inventoryTotal": 86,
+  "activeRuntimePackageTotal": 52,
+  "excludedDisabledFeatureTotal": 34,
+  "provenance": {
+    "fact": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+    "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+    "templatePreparation": "OWNER_CREATED",
+    "note": "The owner prepared these templates from the owner's gameplay captures/screens. Template preparation does not transfer ownership of the underlying artwork."
+  },
+  "banks": {
+    "fruit_templates": {
+      "total": 17,
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "runtimeConsumer": "ExpeditionTemplateMatcher → ExpeditionDispatchSession (Expedition)"
+    },
+    "seedling_templates": {
+      "total": 8,
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "runtimeConsumer": "ExpeditionTemplateMatcher → ExpeditionDispatchSession (Expedition)"
+    },
+    "nectar_templates": {
+      "total": 27,
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "runtimeConsumer": "NectarTemplateMatcher → Care/Feed"
+    },
+    "mushroom_templates": {
+      "total": 34,
+      "usageClassification": "REQUIRED_DISABLED_FEATURE",
+      "runtimeConsumer": "No production runtime consumer; excluded from active runtime package"
+    }
+  },
+  "assets": [
+    {
+      "path": "code/app/src/main/assets/fruit_templates/giant_grapefruit.png",
+      "filename": "giant_grapefruit.png",
+      "sha256": "4D429A0F2B5AD6A075C78DDA2C55CD8E23E9E751F1D88F29743D8394CB63FC88",
+      "dimensions": {
+        "width": 80,
+        "height": 80
+      },
+      "bank": "fruit_templates",
+      "runtimeConsumer": "ExpeditionTemplateMatcher → ExpeditionDispatchSession (Expedition)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "presentInActiveRuntimePackage": true
+    },
+    {
+      "path": "code/app/src/main/assets/fruit_templates/giant_grapes.png",
+      "filename": "giant_grapes.png",
+      "sha256": "D287860A9CFF1BEFBBA58C869C50D85991F2D75C9D61D20610BFF12D4D0B9E77",
+      "dimensions": {
+        "width": 80,
+        "height": 80
+      },
+      "bank": "fruit_templates",
+      "runtimeConsumer": "ExpeditionTemplateMatcher → ExpeditionDispatchSession (Expedition)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "presentInActiveRuntimePackage": true
+    },
+    {
+      "path": "code/app/src/main/assets/fruit_templates/giant_melon.png",
+      "filename": "giant_melon.png",
+      "sha256": "C6963E4CC93230B75AD1E5F5D4808D4049E38A4EBD87803982EA742E666BE7DC",
+      "dimensions": {
+        "width": 80,
+        "height": 80
+      },
+      "bank": "fruit_templates",
+      "runtimeConsumer": "ExpeditionTemplateMatcher → ExpeditionDispatchSession (Expedition)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "presentInActiveRuntimePackage": true
+    },
+    {
+      "path": "code/app/src/main/assets/fruit_templates/giant_muscat_grapes.png",
+      "filename": "giant_muscat_grapes.png",
+      "sha256": "C951AAB0BADC8EF46B49E5B7EE69FF7FBD3C08AE0B80ABC5D388A3D7250DBCE8",
+      "dimensions": {
+        "width": 80,
+        "height": 80
+      },
+      "bank": "fruit_templates",
+      "runtimeConsumer": "ExpeditionTemplateMatcher → ExpeditionDispatchSession (Expedition)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "presentInActiveRuntimePackage": true
+    },
+    {
+      "path": "code/app/src/main/assets/fruit_templates/giant_special_fruit.png",
+      "filename": "giant_special_fruit.png",
+      "sha256": "3CE8161CAA8421B3062D38297D8409E7BC1E0A4EDE49A0D95B20CD2705E4A6CB",
+      "dimensions": {
+        "width": 80,
+        "height": 80
+      },
+      "bank": "fruit_templates",
+      "runtimeConsumer": "ExpeditionTemplateMatcher → ExpeditionDispatchSession (Expedition)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "presentInActiveRuntimePackage": true
+    },
+    {
+      "path": "code/app/src/main/assets/fruit_templates/giant_watermelon.png",
+      "filename": "giant_watermelon.png",
+      "sha256": "B8A58A62C365F2A7930F8A0F26178D774CB97B6FE199CE1769CD525997EA0583",
+      "dimensions": {
+        "width": 80,
+        "height": 80
+      },
+      "bank": "fruit_templates",
+      "runtimeConsumer": "ExpeditionTemplateMatcher → ExpeditionDispatchSession (Expedition)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "presentInActiveRuntimePackage": true
+    },
+    {
+      "path": "code/app/src/main/assets/fruit_templates/large_apple.png",
+      "filename": "large_apple.png",
+      "sha256": "8BE774807D096D42B36C6E0BDDB15860370F8653964BEEDC279D0A1A9AF4936C",
+      "dimensions": {
+        "width": 80,
+        "height": 80
+      },
+      "bank": "fruit_templates",
+      "runtimeConsumer": "ExpeditionTemplateMatcher → ExpeditionDispatchSession (Expedition)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "presentInActiveRuntimePackage": true
+    },
+    {
+      "path": "code/app/src/main/assets/fruit_templates/large_green_apple.png",
+      "filename": "large_green_apple.png",
+      "sha256": "85FDC841D0258A34D57E712A378F522B99BDBF51E44F9F1DCC0445D9D3709467",
+      "dimensions": {
+        "width": 80,
+        "height": 80
+      },
+      "bank": "fruit_templates",
+      "runtimeConsumer": "ExpeditionTemplateMatcher → ExpeditionDispatchSession (Expedition)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "presentInActiveRuntimePackage": true
+    },
+    {
+      "path": "code/app/src/main/assets/fruit_templates/large_lemon.png",
+      "filename": "large_lemon.png",
+      "sha256": "AD56314E423D39F5B255CFEF9AAF85D85B1187BDCCD4B2182941E9102C3028CF",
+      "dimensions": {
+        "width": 80,
+        "height": 80
+      },
+      "bank": "fruit_templates",
+      "runtimeConsumer": "ExpeditionTemplateMatcher → ExpeditionDispatchSession (Expedition)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "presentInActiveRuntimePackage": true
+    },
+    {
+      "path": "code/app/src/main/assets/fruit_templates/large_orange.png",
+      "filename": "large_orange.png",
+      "sha256": "933724E512088291604100D6B17709B56615764EF9BA3F416A103D8ABC88F783",
+      "dimensions": {
+        "width": 80,
+        "height": 80
+      },
+      "bank": "fruit_templates",
+      "runtimeConsumer": "ExpeditionTemplateMatcher → ExpeditionDispatchSession (Expedition)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "presentInActiveRuntimePackage": true
+    },
+    {
+      "path": "code/app/src/main/assets/fruit_templates/large_peach.png",
+      "filename": "large_peach.png",
+      "sha256": "08A8EBD3FBFC6A3AF1B5318FB157F436F4BE5C26A1D66284A5C7BFB0BB56E306",
+      "dimensions": {
+        "width": 80,
+        "height": 80
+      },
+      "bank": "fruit_templates",
+      "runtimeConsumer": "ExpeditionTemplateMatcher → ExpeditionDispatchSession (Expedition)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "presentInActiveRuntimePackage": true
+    },
+    {
+      "path": "code/app/src/main/assets/fruit_templates/large_plum.png",
+      "filename": "large_plum.png",
+      "sha256": "55E965E675BA6FCB4A7EA98FF670D60A41663D3D31C2C241A7C92D36BB3D4BAE",
+      "dimensions": {
+        "width": 80,
+        "height": 80
+      },
+      "bank": "fruit_templates",
+      "runtimeConsumer": "ExpeditionTemplateMatcher → ExpeditionDispatchSession (Expedition)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "presentInActiveRuntimePackage": true
+    },
+    {
+      "path": "code/app/src/main/assets/fruit_templates/small_blueberry.png",
+      "filename": "small_blueberry.png",
+      "sha256": "5410DF3357DD05534F3C644D6FC957868560CDA63E8ABB81A03D36B7F401CC38",
+      "dimensions": {
+        "width": 80,
+        "height": 80
+      },
+      "bank": "fruit_templates",
+      "runtimeConsumer": "ExpeditionTemplateMatcher → ExpeditionDispatchSession (Expedition)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "presentInActiveRuntimePackage": true
+    },
+    {
+      "path": "code/app/src/main/assets/fruit_templates/small_cherry.png",
+      "filename": "small_cherry.png",
+      "sha256": "3D0A6DBF33F9F3CF63597923BD21C3CAD59C4AB539E03C59932EEC2AB18EF50B",
+      "dimensions": {
+        "width": 80,
+        "height": 80
+      },
+      "bank": "fruit_templates",
+      "runtimeConsumer": "ExpeditionTemplateMatcher → ExpeditionDispatchSession (Expedition)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "presentInActiveRuntimePackage": true
+    },
+    {
+      "path": "code/app/src/main/assets/fruit_templates/small_kumquat.png",
+      "filename": "small_kumquat.png",
+      "sha256": "655934E0C2B3062DED3F286421283BD896B4C5AA734F1CDC8A412545C043BFB2",
+      "dimensions": {
+        "width": 80,
+        "height": 80
+      },
+      "bank": "fruit_templates",
+      "runtimeConsumer": "ExpeditionTemplateMatcher → ExpeditionDispatchSession (Expedition)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "presentInActiveRuntimePackage": true
+    },
+    {
+      "path": "code/app/src/main/assets/fruit_templates/small_lime.png",
+      "filename": "small_lime.png",
+      "sha256": "F2C9C085D5A553B89809BCEBF4A29F12FC226580779926F891DCCB254CDB5977",
+      "dimensions": {
+        "width": 80,
+        "height": 80
+      },
+      "bank": "fruit_templates",
+      "runtimeConsumer": "ExpeditionTemplateMatcher → ExpeditionDispatchSession (Expedition)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "presentInActiveRuntimePackage": true
+    },
+    {
+      "path": "code/app/src/main/assets/fruit_templates/small_strawberry.png",
+      "filename": "small_strawberry.png",
+      "sha256": "EB05E1C828B143943C641060F2B88F5045AFF3DA706B500A6C87595A72D75033",
+      "dimensions": {
+        "width": 80,
+        "height": 80
+      },
+      "bank": "fruit_templates",
+      "runtimeConsumer": "ExpeditionTemplateMatcher → ExpeditionDispatchSession (Expedition)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "presentInActiveRuntimePackage": true
+    },
+    {
+      "path": "code/app/src/main/assets/nectar_templates/白色九重葛.png",
+      "filename": "白色九重葛.png",
+      "sha256": "9E807A8FDF52E4BD546CA2390ECDEB26CC1C6AA901AE2E4FE5163C4058EE19FE",
+      "dimensions": {
+        "width": 80,
+        "height": 80
+      },
+      "bank": "nectar_templates",
+      "runtimeConsumer": "NectarTemplateMatcher → Care/Feed",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "presentInActiveRuntimePackage": true
+    },
+    {
+      "path": "code/app/src/main/assets/nectar_templates/白色扶桑花.png",
+      "filename": "白色扶桑花.png",
+      "sha256": "50E734088D38DDD9E3CE93E27858937EBBB0F4C0771D36812007AECA6B992C6C",
+      "dimensions": {
+        "width": 80,
+        "height": 80
+      },
+      "bank": "nectar_templates",
+      "runtimeConsumer": "NectarTemplateMatcher → Care/Feed",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "presentInActiveRuntimePackage": true
+    },
+    {
+      "path": "code/app/src/main/assets/nectar_templates/白色彼岸花.png",
+      "filename": "白色彼岸花.png",
+      "sha256": "F5A6E13305C9A482FA78A0F98E699DEA6B120EBDF21886AA95DC646861042C1C",
+      "dimensions": {
+        "width": 80,
+        "height": 80
+      },
+      "bank": "nectar_templates",
+      "runtimeConsumer": "NectarTemplateMatcher → Care/Feed",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "presentInActiveRuntimePackage": true
+    },
+    {
+      "path": "code/app/src/main/assets/nectar_templates/白色洋桔梗.png",
+      "filename": "白色洋桔梗.png",
+      "sha256": "918938CB5D57B4924FFC3B6DC4B0FDDEAAD0375B37324AA2BF6FF3536D447585",
+      "dimensions": {
+        "width": 80,
+        "height": 80
+      },
+      "bank": "nectar_templates",
+      "runtimeConsumer": "NectarTemplateMatcher → Care/Feed",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "presentInActiveRuntimePackage": true
+    },
+    {
+      "path": "code/app/src/main/assets/nectar_templates/白色美人蕉.png",
+      "filename": "白色美人蕉.png",
+      "sha256": "97EFBB062FC17273EA51293E8D49F6AF709C8665197C686BC06ABA3820D621A7",
+      "dimensions": {
+        "width": 80,
+        "height": 80
+      },
+      "bank": "nectar_templates",
+      "runtimeConsumer": "NectarTemplateMatcher → Care/Feed",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "presentInActiveRuntimePackage": true
+    },
+    {
+      "path": "code/app/src/main/assets/nectar_templates/白色雞冠花.png",
+      "filename": "白色雞冠花.png",
+      "sha256": "A0EED14726D2BC8E0F52353C8E0EBD86EB35C06445460032DCC9E8A8439DBFCC",
+      "dimensions": {
+        "width": 80,
+        "height": 80
+      },
+      "bank": "nectar_templates",
+      "runtimeConsumer": "NectarTemplateMatcher → Care/Feed",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "presentInActiveRuntimePackage": true
+    },
+    {
+      "path": "code/app/src/main/assets/nectar_templates/紅色九重葛.png",
+      "filename": "紅色九重葛.png",
+      "sha256": "70C1B1BE07857866228A4E47F0B4116168EA485E616E0091293E3033C29A0D48",
+      "dimensions": {
+        "width": 80,
+        "height": 80
+      },
+      "bank": "nectar_templates",
+      "runtimeConsumer": "NectarTemplateMatcher → Care/Feed",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "presentInActiveRuntimePackage": true
+    },
+    {
+      "path": "code/app/src/main/assets/nectar_templates/紅色扶桑花.png",
+      "filename": "紅色扶桑花.png",
+      "sha256": "0CB7237AF9AE1737B82DA41E84931CA010CA96E8870C0620FC8343DABCEAE772",
+      "dimensions": {
+        "width": 80,
+        "height": 80
+      },
+      "bank": "nectar_templates",
+      "runtimeConsumer": "NectarTemplateMatcher → Care/Feed",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "presentInActiveRuntimePackage": true
+    },
+    {
+      "path": "code/app/src/main/assets/nectar_templates/紅色彼岸花.png",
+      "filename": "紅色彼岸花.png",
+      "sha256": "EB4C11403C074321576C02C0BAD2C654B76DA68FF9CA719DC4A9B50478B93F20",
+      "dimensions": {
+        "width": 80,
+        "height": 80
+      },
+      "bank": "nectar_templates",
+      "runtimeConsumer": "NectarTemplateMatcher → Care/Feed",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "presentInActiveRuntimePackage": true
+    },
+    {
+      "path": "code/app/src/main/assets/nectar_templates/紅色洋桔梗.png",
+      "filename": "紅色洋桔梗.png",
+      "sha256": "F0A02BF345A748FD51EFC733AC7FB6C9BE46436BC137F8B2FFD8794F6EFB0F2B",
+      "dimensions": {
+        "width": 80,
+        "height": 80
+      },
+      "bank": "nectar_templates",
+      "runtimeConsumer": "NectarTemplateMatcher → Care/Feed",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "presentInActiveRuntimePackage": true
+    },
+    {
+      "path": "code/app/src/main/assets/nectar_templates/紅色美人蕉.png",
+      "filename": "紅色美人蕉.png",
+      "sha256": "7D6A53B830E3E937D9EACD36A504DCF8A56178EF5935420EF1802B23A1130F2D",
+      "dimensions": {
+        "width": 80,
+        "height": 80
+      },
+      "bank": "nectar_templates",
+      "runtimeConsumer": "NectarTemplateMatcher → Care/Feed",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "presentInActiveRuntimePackage": true
+    },
+    {
+      "path": "code/app/src/main/assets/nectar_templates/紅色精華.png",
+      "filename": "紅色精華.png",
+      "sha256": "812C49CC0D2332DFFD38DF88E9E1879D30D9110533BA9949EB78845445DE90A2",
+      "dimensions": {
+        "width": 80,
+        "height": 80
+      },
+      "bank": "nectar_templates",
+      "runtimeConsumer": "NectarTemplateMatcher → Care/Feed",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "presentInActiveRuntimePackage": true
+    },
+    {
+      "path": "code/app/src/main/assets/nectar_templates/紅色雞冠花.png",
+      "filename": "紅色雞冠花.png",
+      "sha256": "4E99E2C3E4AB6724525C13C18288578E2A9FE2E0A463F2339AE491D0172DE08D",
+      "dimensions": {
+        "width": 80,
+        "height": 80
+      },
+      "bank": "nectar_templates",
+      "runtimeConsumer": "NectarTemplateMatcher → Care/Feed",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "presentInActiveRuntimePackage": true
+    },
+    {
+      "path": "code/app/src/main/assets/nectar_templates/特殊精華.png",
+      "filename": "特殊精華.png",
+      "sha256": "7C7DE2BF2BC754690BAE46419C48479AEB8F82B3104FD7FA27564894C04D5EE9",
+      "dimensions": {
+        "width": 80,
+        "height": 80
+      },
+      "bank": "nectar_templates",
+      "runtimeConsumer": "NectarTemplateMatcher → Care/Feed",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "presentInActiveRuntimePackage": true
+    },
+    {
+      "path": "code/app/src/main/assets/nectar_templates/黃色九重葛.png",
+      "filename": "黃色九重葛.png",
+      "sha256": "F1AE0A1B4DC606B33031E0A38DBCD208CF3521BC7C5CFF390CA219CD87A16742",
+      "dimensions": {
+        "width": 80,
+        "height": 80
+      },
+      "bank": "nectar_templates",
+      "runtimeConsumer": "NectarTemplateMatcher → Care/Feed",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "presentInActiveRuntimePackage": true
+    },
+    {
+      "path": "code/app/src/main/assets/nectar_templates/黃色扶桑花.png",
+      "filename": "黃色扶桑花.png",
+      "sha256": "F4CC176A7FC0300FC7F7482EA26B24010AC4A123CB778E2A2B4DB30A80285B00",
+      "dimensions": {
+        "width": 80,
+        "height": 80
+      },
+      "bank": "nectar_templates",
+      "runtimeConsumer": "NectarTemplateMatcher → Care/Feed",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "presentInActiveRuntimePackage": true
+    },
+    {
+      "path": "code/app/src/main/assets/nectar_templates/黃色彼岸花.png",
+      "filename": "黃色彼岸花.png",
+      "sha256": "398637E45D403260891EC44B674CEFAF8812C837E128E81971B500E779F8C14C",
+      "dimensions": {
+        "width": 80,
+        "height": 80
+      },
+      "bank": "nectar_templates",
+      "runtimeConsumer": "NectarTemplateMatcher → Care/Feed",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "presentInActiveRuntimePackage": true
+    },
+    {
+      "path": "code/app/src/main/assets/nectar_templates/黃色洋桔梗.png",
+      "filename": "黃色洋桔梗.png",
+      "sha256": "04D21B4EBDE5B5CA08B2F85424FF55AD8B7B159C34544B0AE51D507BB7458283",
+      "dimensions": {
+        "width": 80,
+        "height": 80
+      },
+      "bank": "nectar_templates",
+      "runtimeConsumer": "NectarTemplateMatcher → Care/Feed",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "presentInActiveRuntimePackage": true
+    },
+    {
+      "path": "code/app/src/main/assets/nectar_templates/黃色美人蕉.png",
+      "filename": "黃色美人蕉.png",
+      "sha256": "A6C7F7D17A7BF9E5E83E0F29348DEAFAC6627581B630064D8E5458B8E74AEDA7",
+      "dimensions": {
+        "width": 80,
+        "height": 80
+      },
+      "bank": "nectar_templates",
+      "runtimeConsumer": "NectarTemplateMatcher → Care/Feed",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "presentInActiveRuntimePackage": true
+    },
+    {
+      "path": "code/app/src/main/assets/nectar_templates/黃色精華.png",
+      "filename": "黃色精華.png",
+      "sha256": "E11FE1F7898C5484FA90985B6FAF79712707E76EAB420D858A792B461D0A6A5B",
+      "dimensions": {
+        "width": 80,
+        "height": 80
+      },
+      "bank": "nectar_templates",
+      "runtimeConsumer": "NectarTemplateMatcher → Care/Feed",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "presentInActiveRuntimePackage": true
+    },
+    {
+      "path": "code/app/src/main/assets/nectar_templates/黃色雞冠花.png",
+      "filename": "黃色雞冠花.png",
+      "sha256": "E3D3BFCF56678326B2B5DB9DF5F6E68FF5E9E6392B53830C02D4BB8C38F7BFEA",
+      "dimensions": {
+        "width": 80,
+        "height": 80
+      },
+      "bank": "nectar_templates",
+      "runtimeConsumer": "NectarTemplateMatcher → Care/Feed",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "presentInActiveRuntimePackage": true
+    },
+    {
+      "path": "code/app/src/main/assets/nectar_templates/精華.png",
+      "filename": "精華.png",
+      "sha256": "C291D66211ECE06A9596C3B84F56EF2A1B8E0B98D05E8C8DEC408AC741421D0B",
+      "dimensions": {
+        "width": 80,
+        "height": 80
+      },
+      "bank": "nectar_templates",
+      "runtimeConsumer": "NectarTemplateMatcher → Care/Feed",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "presentInActiveRuntimePackage": true
+    },
+    {
+      "path": "code/app/src/main/assets/nectar_templates/藍色九重葛.png",
+      "filename": "藍色九重葛.png",
+      "sha256": "9E5F79162D04F2A678BC1C0DC806D3780F47D6FF7BCFF482C5EDCB41F21A7714",
+      "dimensions": {
+        "width": 80,
+        "height": 80
+      },
+      "bank": "nectar_templates",
+      "runtimeConsumer": "NectarTemplateMatcher → Care/Feed",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "presentInActiveRuntimePackage": true
+    },
+    {
+      "path": "code/app/src/main/assets/nectar_templates/藍色扶桑花.png",
+      "filename": "藍色扶桑花.png",
+      "sha256": "2D13372DF595052FD23A993B46E19B2DD0E61753EC44FB4848A9CAB55D3365DF",
+      "dimensions": {
+        "width": 80,
+        "height": 80
+      },
+      "bank": "nectar_templates",
+      "runtimeConsumer": "NectarTemplateMatcher → Care/Feed",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "presentInActiveRuntimePackage": true
+    },
+    {
+      "path": "code/app/src/main/assets/nectar_templates/藍色洋桔梗.png",
+      "filename": "藍色洋桔梗.png",
+      "sha256": "D442C69D0522631C9C2F3C352143F70F6F5A586B34FA9F4899B8E312FA917E82",
+      "dimensions": {
+        "width": 80,
+        "height": 80
+      },
+      "bank": "nectar_templates",
+      "runtimeConsumer": "NectarTemplateMatcher → Care/Feed",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "presentInActiveRuntimePackage": true
+    },
+    {
+      "path": "code/app/src/main/assets/nectar_templates/藍色精華.png",
+      "filename": "藍色精華.png",
+      "sha256": "FE6181CBC9500F6F408EF4DA9A910E03566AA8F19EA40E501DA7E9E839168EF0",
+      "dimensions": {
+        "width": 80,
+        "height": 80
+      },
+      "bank": "nectar_templates",
+      "runtimeConsumer": "NectarTemplateMatcher → Care/Feed",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "presentInActiveRuntimePackage": true
+    },
+    {
+      "path": "code/app/src/main/assets/nectar_templates/藍色雞冠花.png",
+      "filename": "藍色雞冠花.png",
+      "sha256": "50F799524D61DFEEE24D048967D633DA09488EF1F73602F386B951D6E5354589",
+      "dimensions": {
+        "width": 80,
+        "height": 80
+      },
+      "bank": "nectar_templates",
+      "runtimeConsumer": "NectarTemplateMatcher → Care/Feed",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "presentInActiveRuntimePackage": true
+    },
+    {
+      "path": "code/app/src/main/assets/seedling_templates/seedling_black.png",
+      "filename": "seedling_black.png",
+      "sha256": "17F50437F2F57335299AAE1C1BBB0067E365E5A5FD8BA4FDBEBAA1FADD15015C",
+      "dimensions": {
+        "width": 1254,
+        "height": 1254
+      },
+      "bank": "seedling_templates",
+      "runtimeConsumer": "ExpeditionTemplateMatcher → ExpeditionDispatchSession (Expedition)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "presentInActiveRuntimePackage": true
+    },
+    {
+      "path": "code/app/src/main/assets/seedling_templates/seedling_blue.png",
+      "filename": "seedling_blue.png",
+      "sha256": "DC135E1D8498B6B7552A7564E0D49B3BE7561CF80E49DB84CABC19DCE3695B00",
+      "dimensions": {
+        "width": 1254,
+        "height": 1254
+      },
+      "bank": "seedling_templates",
+      "runtimeConsumer": "ExpeditionTemplateMatcher → ExpeditionDispatchSession (Expedition)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "presentInActiveRuntimePackage": true
+    },
+    {
+      "path": "code/app/src/main/assets/seedling_templates/seedling_huge.png",
+      "filename": "seedling_huge.png",
+      "sha256": "B0261D1E17227E09AF577152786FC8425B8013F121FA32086491974C1D9C99A0",
+      "dimensions": {
+        "width": 1254,
+        "height": 1254
+      },
+      "bank": "seedling_templates",
+      "runtimeConsumer": "ExpeditionTemplateMatcher → ExpeditionDispatchSession (Expedition)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "presentInActiveRuntimePackage": true
+    },
+    {
+      "path": "code/app/src/main/assets/seedling_templates/seedling_pink.png",
+      "filename": "seedling_pink.png",
+      "sha256": "97BDE57A7B9C6A724314D03D2361B7A153E5B9A6AC68905D56EF69A907499805",
+      "dimensions": {
+        "width": 1254,
+        "height": 1254
+      },
+      "bank": "seedling_templates",
+      "runtimeConsumer": "ExpeditionTemplateMatcher → ExpeditionDispatchSession (Expedition)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "presentInActiveRuntimePackage": true
+    },
+    {
+      "path": "code/app/src/main/assets/seedling_templates/seedling_purple.png",
+      "filename": "seedling_purple.png",
+      "sha256": "6587899E8FFCA15DC78A13F2CCBBFCF5B68ACEE0F324EDFAAD94FAA0BD041750",
+      "dimensions": {
+        "width": 1254,
+        "height": 1254
+      },
+      "bank": "seedling_templates",
+      "runtimeConsumer": "ExpeditionTemplateMatcher → ExpeditionDispatchSession (Expedition)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "presentInActiveRuntimePackage": true
+    },
+    {
+      "path": "code/app/src/main/assets/seedling_templates/seedling_red.png",
+      "filename": "seedling_red.png",
+      "sha256": "C48D765CAD3EDAE85AA9EF906B6EBBCAD657719FE45B60B5694671D7722E712A",
+      "dimensions": {
+        "width": 1254,
+        "height": 1254
+      },
+      "bank": "seedling_templates",
+      "runtimeConsumer": "ExpeditionTemplateMatcher → ExpeditionDispatchSession (Expedition)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "presentInActiveRuntimePackage": true
+    },
+    {
+      "path": "code/app/src/main/assets/seedling_templates/seedling_white.png",
+      "filename": "seedling_white.png",
+      "sha256": "ECF62E4D06B583775F5D5B6BFE124E3D02B05DABCC7BEDB332C45EC1153C1BEC",
+      "dimensions": {
+        "width": 1254,
+        "height": 1254
+      },
+      "bank": "seedling_templates",
+      "runtimeConsumer": "ExpeditionTemplateMatcher → ExpeditionDispatchSession (Expedition)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "presentInActiveRuntimePackage": true
+    },
+    {
+      "path": "code/app/src/main/assets/seedling_templates/seedling_yellow.png",
+      "filename": "seedling_yellow.png",
+      "sha256": "0861515D62E2D35E07CCC0DE28998946741E672BCC576D3D5FF20F1D96A161C2",
+      "dimensions": {
+        "width": 1254,
+        "height": 1254
+      },
+      "bank": "seedling_templates",
+      "runtimeConsumer": "ExpeditionTemplateMatcher → ExpeditionDispatchSession (Expedition)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_ACTIVE_FEATURE",
+      "presentInActiveRuntimePackage": true
+    },
+    {
+      "path": "code/app/src/main/assets/mushroom_templates/template_01.png",
+      "filename": "template_01.png",
+      "sha256": "A09934FC7777B231C6A382C335556C8255CF8B656A923CCD30F631E3AD6B5072",
+      "dimensions": {
+        "width": 87,
+        "height": 45
+      },
+      "bank": "mushroom_templates",
+      "runtimeConsumer": "Mushroom runtime (implementation frozen; no active consumer)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_DISABLED_FEATURE",
+      "presentInActiveRuntimePackage": false
+    },
+    {
+      "path": "code/app/src/main/assets/mushroom_templates/template_02.png",
+      "filename": "template_02.png",
+      "sha256": "9F03F4E7151EFF73CABCC9E6E86179C3C2D73A4BC268C8F5CAB17D989FFDD5F3",
+      "dimensions": {
+        "width": 85,
+        "height": 54
+      },
+      "bank": "mushroom_templates",
+      "runtimeConsumer": "Mushroom runtime (implementation frozen; no active consumer)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_DISABLED_FEATURE",
+      "presentInActiveRuntimePackage": false
+    },
+    {
+      "path": "code/app/src/main/assets/mushroom_templates/template_03.png",
+      "filename": "template_03.png",
+      "sha256": "344110A2EEAAE2F258DC729E1F3FE3BB31FFFE33E55AF64CAD552E60D0D4BF14",
+      "dimensions": {
+        "width": 91,
+        "height": 49
+      },
+      "bank": "mushroom_templates",
+      "runtimeConsumer": "Mushroom runtime (implementation frozen; no active consumer)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_DISABLED_FEATURE",
+      "presentInActiveRuntimePackage": false
+    },
+    {
+      "path": "code/app/src/main/assets/mushroom_templates/template_04.png",
+      "filename": "template_04.png",
+      "sha256": "D2F5F03849A5527578940D782F416281F01E42187859B97E29816E5B81941474",
+      "dimensions": {
+        "width": 96,
+        "height": 50
+      },
+      "bank": "mushroom_templates",
+      "runtimeConsumer": "Mushroom runtime (implementation frozen; no active consumer)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_DISABLED_FEATURE",
+      "presentInActiveRuntimePackage": false
+    },
+    {
+      "path": "code/app/src/main/assets/mushroom_templates/template_05.png",
+      "filename": "template_05.png",
+      "sha256": "A5A388B6D6DB2711E40F4A46811054DEC3DD9714EB483375B0461C6494A799F2",
+      "dimensions": {
+        "width": 76,
+        "height": 39
+      },
+      "bank": "mushroom_templates",
+      "runtimeConsumer": "Mushroom runtime (implementation frozen; no active consumer)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_DISABLED_FEATURE",
+      "presentInActiveRuntimePackage": false
+    },
+    {
+      "path": "code/app/src/main/assets/mushroom_templates/template_06.png",
+      "filename": "template_06.png",
+      "sha256": "BEFFF021AAF22E692712285DF966DD8A05657E1546078725C72B3121D067DFFF",
+      "dimensions": {
+        "width": 67,
+        "height": 43
+      },
+      "bank": "mushroom_templates",
+      "runtimeConsumer": "Mushroom runtime (implementation frozen; no active consumer)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_DISABLED_FEATURE",
+      "presentInActiveRuntimePackage": false
+    },
+    {
+      "path": "code/app/src/main/assets/mushroom_templates/template_07.png",
+      "filename": "template_07.png",
+      "sha256": "4E27C549BCD4980EB390A56A17936B87A0CC737BEC9BF74EA4F8B34BB45A6AB7",
+      "dimensions": {
+        "width": 79,
+        "height": 46
+      },
+      "bank": "mushroom_templates",
+      "runtimeConsumer": "Mushroom runtime (implementation frozen; no active consumer)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_DISABLED_FEATURE",
+      "presentInActiveRuntimePackage": false
+    },
+    {
+      "path": "code/app/src/main/assets/mushroom_templates/template_08.png",
+      "filename": "template_08.png",
+      "sha256": "D293B33525B0BA8755BC45C3C5F57F7C2FC933941217903685E2964191BC49E4",
+      "dimensions": {
+        "width": 74,
+        "height": 44
+      },
+      "bank": "mushroom_templates",
+      "runtimeConsumer": "Mushroom runtime (implementation frozen; no active consumer)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_DISABLED_FEATURE",
+      "presentInActiveRuntimePackage": false
+    },
+    {
+      "path": "code/app/src/main/assets/mushroom_templates/template_09.png",
+      "filename": "template_09.png",
+      "sha256": "877CA051C3FD7874A8581E0A377A36AD9FA66FB4B48658ACF2D952775C8D3024",
+      "dimensions": {
+        "width": 74,
+        "height": 52
+      },
+      "bank": "mushroom_templates",
+      "runtimeConsumer": "Mushroom runtime (implementation frozen; no active consumer)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_DISABLED_FEATURE",
+      "presentInActiveRuntimePackage": false
+    },
+    {
+      "path": "code/app/src/main/assets/mushroom_templates/template_10.png",
+      "filename": "template_10.png",
+      "sha256": "4B2564257318B881D2170D3AB323F6BC61B6FAE9BBFFEEECF1C060C2F3D980A9",
+      "dimensions": {
+        "width": 78,
+        "height": 44
+      },
+      "bank": "mushroom_templates",
+      "runtimeConsumer": "Mushroom runtime (implementation frozen; no active consumer)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_DISABLED_FEATURE",
+      "presentInActiveRuntimePackage": false
+    },
+    {
+      "path": "code/app/src/main/assets/mushroom_templates/template_11.png",
+      "filename": "template_11.png",
+      "sha256": "825D06046AE5B57E3E22ABC37C78191F6918196416F62C2678538B32F263CCA4",
+      "dimensions": {
+        "width": 80,
+        "height": 45
+      },
+      "bank": "mushroom_templates",
+      "runtimeConsumer": "Mushroom runtime (implementation frozen; no active consumer)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_DISABLED_FEATURE",
+      "presentInActiveRuntimePackage": false
+    },
+    {
+      "path": "code/app/src/main/assets/mushroom_templates/template_12.png",
+      "filename": "template_12.png",
+      "sha256": "0BF9D0E46588FF74877E375CF70A89B2EBF31CD070C52DB7AC3BE71D596AF22B",
+      "dimensions": {
+        "width": 63,
+        "height": 43
+      },
+      "bank": "mushroom_templates",
+      "runtimeConsumer": "Mushroom runtime (implementation frozen; no active consumer)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_DISABLED_FEATURE",
+      "presentInActiveRuntimePackage": false
+    },
+    {
+      "path": "code/app/src/main/assets/mushroom_templates/template_13.png",
+      "filename": "template_13.png",
+      "sha256": "7A4A5DE6E84566447AA340D4F0C45B6E41B9453A56681CAA54C3066B09534834",
+      "dimensions": {
+        "width": 78,
+        "height": 46
+      },
+      "bank": "mushroom_templates",
+      "runtimeConsumer": "Mushroom runtime (implementation frozen; no active consumer)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_DISABLED_FEATURE",
+      "presentInActiveRuntimePackage": false
+    },
+    {
+      "path": "code/app/src/main/assets/mushroom_templates/template_14.png",
+      "filename": "template_14.png",
+      "sha256": "0DDD11FB389CE5CE40E808ACDBCD25124D72AA384A3FE5570AE63CAC4184B619",
+      "dimensions": {
+        "width": 93,
+        "height": 63
+      },
+      "bank": "mushroom_templates",
+      "runtimeConsumer": "Mushroom runtime (implementation frozen; no active consumer)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_DISABLED_FEATURE",
+      "presentInActiveRuntimePackage": false
+    },
+    {
+      "path": "code/app/src/main/assets/mushroom_templates/template_15.png",
+      "filename": "template_15.png",
+      "sha256": "1362EC253E7B8164165DDB9B1D74347F3FBA9B0ABA7DC822188CA42A1FB9C565",
+      "dimensions": {
+        "width": 109,
+        "height": 75
+      },
+      "bank": "mushroom_templates",
+      "runtimeConsumer": "Mushroom runtime (implementation frozen; no active consumer)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_DISABLED_FEATURE",
+      "presentInActiveRuntimePackage": false
+    },
+    {
+      "path": "code/app/src/main/assets/mushroom_templates/template_16.png",
+      "filename": "template_16.png",
+      "sha256": "C5BEE89E00A4C05D0B534473851E64A59D78E9B8E354E198E5EEC97CA9C8D7CF",
+      "dimensions": {
+        "width": 91,
+        "height": 66
+      },
+      "bank": "mushroom_templates",
+      "runtimeConsumer": "Mushroom runtime (implementation frozen; no active consumer)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_DISABLED_FEATURE",
+      "presentInActiveRuntimePackage": false
+    },
+    {
+      "path": "code/app/src/main/assets/mushroom_templates/template_17.png",
+      "filename": "template_17.png",
+      "sha256": "4A75A654B11F99666A56D08299F4B0AE3EBE9FAAB35BFEE4943B37007774F0BE",
+      "dimensions": {
+        "width": 111,
+        "height": 72
+      },
+      "bank": "mushroom_templates",
+      "runtimeConsumer": "Mushroom runtime (implementation frozen; no active consumer)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_DISABLED_FEATURE",
+      "presentInActiveRuntimePackage": false
+    },
+    {
+      "path": "code/app/src/main/assets/mushroom_templates/template_18.png",
+      "filename": "template_18.png",
+      "sha256": "E17430CE4141BF276F4FF33F3535307599BCECE232C84937D60011D60B6C9F5C",
+      "dimensions": {
+        "width": 106,
+        "height": 69
+      },
+      "bank": "mushroom_templates",
+      "runtimeConsumer": "Mushroom runtime (implementation frozen; no active consumer)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_DISABLED_FEATURE",
+      "presentInActiveRuntimePackage": false
+    },
+    {
+      "path": "code/app/src/main/assets/mushroom_templates/template_19.png",
+      "filename": "template_19.png",
+      "sha256": "F3BF8B9848044D5E014AF6378D4DEA337FEEFC4F2E2D3A950FA1E179F3470146",
+      "dimensions": {
+        "width": 89,
+        "height": 68
+      },
+      "bank": "mushroom_templates",
+      "runtimeConsumer": "Mushroom runtime (implementation frozen; no active consumer)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_DISABLED_FEATURE",
+      "presentInActiveRuntimePackage": false
+    },
+    {
+      "path": "code/app/src/main/assets/mushroom_templates/template_20.png",
+      "filename": "template_20.png",
+      "sha256": "C60F40067390F9CEFB710619D4B5A4F5D075D5D54A88668EDAA6CB5017836B17",
+      "dimensions": {
+        "width": 102,
+        "height": 63
+      },
+      "bank": "mushroom_templates",
+      "runtimeConsumer": "Mushroom runtime (implementation frozen; no active consumer)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_DISABLED_FEATURE",
+      "presentInActiveRuntimePackage": false
+    },
+    {
+      "path": "code/app/src/main/assets/mushroom_templates/template_21.png",
+      "filename": "template_21.png",
+      "sha256": "38DCB866ECC526DD987D2A232AC08A603526ECCFD907391221AC0F8FD15C55B5",
+      "dimensions": {
+        "width": 95,
+        "height": 65
+      },
+      "bank": "mushroom_templates",
+      "runtimeConsumer": "Mushroom runtime (implementation frozen; no active consumer)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_DISABLED_FEATURE",
+      "presentInActiveRuntimePackage": false
+    },
+    {
+      "path": "code/app/src/main/assets/mushroom_templates/template_22.png",
+      "filename": "template_22.png",
+      "sha256": "02146F19F336C552FFFECE85F82B876AE828D2A95FB2FDCBF250109368F007F1",
+      "dimensions": {
+        "width": 89,
+        "height": 63
+      },
+      "bank": "mushroom_templates",
+      "runtimeConsumer": "Mushroom runtime (implementation frozen; no active consumer)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_DISABLED_FEATURE",
+      "presentInActiveRuntimePackage": false
+    },
+    {
+      "path": "code/app/src/main/assets/mushroom_templates/template_23.png",
+      "filename": "template_23.png",
+      "sha256": "27A55774390F4A9150841588F7EA4CDA801B5F68AB8A79DBE87A77B71ED9A238",
+      "dimensions": {
+        "width": 103,
+        "height": 63
+      },
+      "bank": "mushroom_templates",
+      "runtimeConsumer": "Mushroom runtime (implementation frozen; no active consumer)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_DISABLED_FEATURE",
+      "presentInActiveRuntimePackage": false
+    },
+    {
+      "path": "code/app/src/main/assets/mushroom_templates/template_24.png",
+      "filename": "template_24.png",
+      "sha256": "87AC1CA4100850CCB73A3DD30B8710A042576FD921CC40015751B1AE05D2F86F",
+      "dimensions": {
+        "width": 103,
+        "height": 65
+      },
+      "bank": "mushroom_templates",
+      "runtimeConsumer": "Mushroom runtime (implementation frozen; no active consumer)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_DISABLED_FEATURE",
+      "presentInActiveRuntimePackage": false
+    },
+    {
+      "path": "code/app/src/main/assets/mushroom_templates/template_25.png",
+      "filename": "template_25.png",
+      "sha256": "676331729270C48BA67FE81E32E73A907723CAC07326F005C6861F8937F4B5F1",
+      "dimensions": {
+        "width": 105,
+        "height": 65
+      },
+      "bank": "mushroom_templates",
+      "runtimeConsumer": "Mushroom runtime (implementation frozen; no active consumer)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_DISABLED_FEATURE",
+      "presentInActiveRuntimePackage": false
+    },
+    {
+      "path": "code/app/src/main/assets/mushroom_templates/template_26.png",
+      "filename": "template_26.png",
+      "sha256": "F9D3B3296C297D64C5B8ABA048B84E65458F8CAC0697BDA791564CDD1D6C3085",
+      "dimensions": {
+        "width": 80,
+        "height": 63
+      },
+      "bank": "mushroom_templates",
+      "runtimeConsumer": "Mushroom runtime (implementation frozen; no active consumer)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_DISABLED_FEATURE",
+      "presentInActiveRuntimePackage": false
+    },
+    {
+      "path": "code/app/src/main/assets/mushroom_templates/template_27.png",
+      "filename": "template_27.png",
+      "sha256": "252A7D24B1F7DB0EFC34806255A90CA8A572E3C74F3F06518C169C9249C68F4D",
+      "dimensions": {
+        "width": 52,
+        "height": 37
+      },
+      "bank": "mushroom_templates",
+      "runtimeConsumer": "Mushroom runtime (implementation frozen; no active consumer)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_DISABLED_FEATURE",
+      "presentInActiveRuntimePackage": false
+    },
+    {
+      "path": "code/app/src/main/assets/mushroom_templates/template_28.png",
+      "filename": "template_28.png",
+      "sha256": "FFBAE142A0A2C11FB19CBEC9EB6C684B18AC1A114A2CECD9AD2D7DED6F39CB8F",
+      "dimensions": {
+        "width": 57,
+        "height": 39
+      },
+      "bank": "mushroom_templates",
+      "runtimeConsumer": "Mushroom runtime (implementation frozen; no active consumer)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_DISABLED_FEATURE",
+      "presentInActiveRuntimePackage": false
+    },
+    {
+      "path": "code/app/src/main/assets/mushroom_templates/template_29.png",
+      "filename": "template_29.png",
+      "sha256": "22AC69A04403E628FB9AD7A1361F36D599DD5F549E5BCE61948663ABDF22A083",
+      "dimensions": {
+        "width": 54,
+        "height": 41
+      },
+      "bank": "mushroom_templates",
+      "runtimeConsumer": "Mushroom runtime (implementation frozen; no active consumer)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_DISABLED_FEATURE",
+      "presentInActiveRuntimePackage": false
+    },
+    {
+      "path": "code/app/src/main/assets/mushroom_templates/template_30.png",
+      "filename": "template_30.png",
+      "sha256": "386610C7C3946773916B7DF71C10A0CF8CE422E99058450926E61DA453C354AC",
+      "dimensions": {
+        "width": 51,
+        "height": 38
+      },
+      "bank": "mushroom_templates",
+      "runtimeConsumer": "Mushroom runtime (implementation frozen; no active consumer)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_DISABLED_FEATURE",
+      "presentInActiveRuntimePackage": false
+    },
+    {
+      "path": "code/app/src/main/assets/mushroom_templates/template_31.png",
+      "filename": "template_31.png",
+      "sha256": "E0C52816130A2A1659597297E48731977E03664F8A8ACFBBCFD4A92A5FEFF8CA",
+      "dimensions": {
+        "width": 54,
+        "height": 32
+      },
+      "bank": "mushroom_templates",
+      "runtimeConsumer": "Mushroom runtime (implementation frozen; no active consumer)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_DISABLED_FEATURE",
+      "presentInActiveRuntimePackage": false
+    },
+    {
+      "path": "code/app/src/main/assets/mushroom_templates/template_32.png",
+      "filename": "template_32.png",
+      "sha256": "142F929A2CD28D65E12CD087782C9D01D8619F5FDC645403B47E79AC8A9C2805",
+      "dimensions": {
+        "width": 59,
+        "height": 31
+      },
+      "bank": "mushroom_templates",
+      "runtimeConsumer": "Mushroom runtime (implementation frozen; no active consumer)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_DISABLED_FEATURE",
+      "presentInActiveRuntimePackage": false
+    },
+    {
+      "path": "code/app/src/main/assets/mushroom_templates/template_33.png",
+      "filename": "template_33.png",
+      "sha256": "C1D6D37F808E6957CC4E629C480E2B16DACFE47D82437C2C57434F469BA778D2",
+      "dimensions": {
+        "width": 54,
+        "height": 37
+      },
+      "bank": "mushroom_templates",
+      "runtimeConsumer": "Mushroom runtime (implementation frozen; no active consumer)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_DISABLED_FEATURE",
+      "presentInActiveRuntimePackage": false
+    },
+    {
+      "path": "code/app/src/main/assets/mushroom_templates/template_34.png",
+      "filename": "template_34.png",
+      "sha256": "4B942351D60091A6E8026E8455BCA60B04C6D8656D31C2C54DB935F3B2BB0969",
+      "dimensions": {
+        "width": 46,
+        "height": 30
+      },
+      "bank": "mushroom_templates",
+      "runtimeConsumer": "Mushroom runtime (implementation frozen; no active consumer)",
+      "provenance": "OWNER_CREATED_GAMEPLAY_CAPTURE_TEMPLATE",
+      "underlyingArtwork": "THIRD_PARTY_GAME_ARTWORK",
+      "templatePreparation": "OWNER_CREATED",
+      "usageClassification": "REQUIRED_DISABLED_FEATURE",
+      "presentInActiveRuntimePackage": false
+    }
+  ]
+}

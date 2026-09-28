@@ -1,7 +1,7 @@
 package com.pikminx.helper;
 
 /** 自動派遣要處理的探險清單項目。 */
-enum ExpeditionTargetMode {
+public enum ExpeditionTargetMode {
     FRUIT,
     POT,
     FRUIT_AND_POT;
@@ -15,7 +15,7 @@ enum ExpeditionTargetMode {
         };
     }
 
-    static ExpeditionTargetMode fromStored(String value) {
+    public static ExpeditionTargetMode fromStored(String value) {
         if (value == null) {
             return FRUIT_AND_POT;
         }

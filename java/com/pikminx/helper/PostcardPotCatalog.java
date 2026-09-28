@@ -6,8 +6,8 @@ import java.util.List;
 import java.util.Set;
 
 /** APK 內建的明信片花盆目錄；選單不依賴 OCR 掃描或使用者輸入。 */
-final class PostcardPotCatalog {
-    enum Color {
+public final class PostcardPotCatalog {
+    public enum Color {
         WHITE("白色"),
         YELLOW("黃色"),
         RED("紅色"),
@@ -63,7 +63,7 @@ final class PostcardPotCatalog {
         return CATEGORIES;
     }
 
-    static List<String> allNames() {
+    public static List<String> allNames() {
         return ALL_NAMES;
     }
 
@@ -80,7 +80,7 @@ final class PostcardPotCatalog {
     }
 
     /** 只接受目錄內的完整單列名稱，並校正實機 OCR 的常見字形誤識。 */
-    static String canonicalName(String value) {
+    public static String canonicalName(String value) {
         if (value == null || value.indexOf('\n') >= 0 || value.indexOf('\r') >= 0) {
             return null;
         }

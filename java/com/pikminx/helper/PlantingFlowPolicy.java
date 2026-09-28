@@ -41,6 +41,11 @@ final class PlantingFlowPolicy {
         return startVisible ? StartAction.TAP_START : StartAction.WAIT_FOR_CONTROL;
     }
 
+    static boolean shouldWaitForStartAfterSelection(
+            boolean startVisible, boolean stopVisible) {
+        return startAction(startVisible, stopVisible) != StartAction.ALREADY_ACTIVE;
+    }
+
     static boolean hasActiveMapEvidence(
             PlantingScreenAnalyzer.Screen screen,
             boolean startVisible,
@@ -70,6 +75,11 @@ final class PlantingFlowPolicy {
 
     static boolean shouldSkipCandidate(int remaining, int threshold) {
         return remaining >= 0 && SwitchGuard.isBelowThreshold(remaining, threshold);
+    }
+
+    /** 搜尋結果已穩定確認時，點擊成功後不再重複執行選取 OCR。 */
+    static boolean requiresSelectionOcrAfterTap(boolean searchedSelection) {
+        return !searchedSelection;
     }
 
     static LowCountDecision afterConfirmedLowCount(
