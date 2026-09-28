@@ -564,6 +564,11 @@ final class PostcardMatcher {
         if (canonical == null) {
             return null;
         }
+        PetalPot exact = findAvailablePetalPot(
+                tokens, canonical, requiredCount, width, height);
+        if (exact != null || canonical.endsWith("花瓣")) {
+            return exact;
+        }
         PetalPotDetector.Match match = PetalPotDetector.findSingleVisible(
                 tokens,
                 requiredCount,

@@ -1,0 +1,124 @@
+{
+  "count": 17,
+  "files": {
+    "giant_grapefruit.png": {
+      "size": [
+        80,
+        80
+      ],
+      "sha256": "4d429a0f2b5ad6a075c78dda2c55cd8e23e9e751f1d88f29743d8394cb63fc88"
+    },
+    "giant_grapes.png": {
+      "size": [
+        80,
+        80
+      ],
+      "sha256": "d287860a9cff1befbba58c869c50d85991f2d75c9d61d20610bff12d4d0b9e77"
+    },
+    "giant_melon.png": {
+      "size": [
+        80,
+        80
+      ],
+      "sha256": "c6963e4cc93230b75ad1e5f5d4808d4049e38a4ebd87803982ea742e666be7dc"
+    },
+    "giant_muscat_grapes.png": {
+      "size": [
+        80,
+        80
+      ],
+      "sha256": "c951aab0badc8ef46b49e5b7ee69ff7fbd3c08ae0b80abc5d388a3d7250dbce8"
+    },
+    "giant_special_fruit.png": {
+      "size": [
+        80,
+        80
+      ],
+      "sha256": "3ce8161caa8421b3062d38297d8409e7bc1e0a4ede49a0d95b20cd2705e4a6cb"
+    },
+    "giant_watermelon.png": {
+      "size": [
+        80,
+        80
+      ],
+      "sha256": "b8a58a62c365f2a7930f8a0f26178d774cb97b6fe199ce1769cd525997ea0583"
+    },
+    "large_apple.png": {
+      "size": [
+        80,
+        80
+      ],
+      "sha256": "8be774807d096d42b36c6e0bddb15860370f8653964beedc279d0a1a9af4936c"
+    },
+    "large_green_apple.png": {
+      "size": [
+        80,
+        80
+      ],
+      "sha256": "85fdc841d0258a34d57e712a378f522b99bdbf51e44f9f1dcc0445d9d3709467"
+    },
+    "large_lemon.png": {
+      "size": [
+        80,
+        80
+      ],
+      "sha256": "ad56314e423d39f5b255cfef9aaf85d85b1187bdccd4b2182941e9102c3028cf"
+    },
+    "large_orange.png": {
+      "size": [
+        80,
+        80
+      ],
+      "sha256": "933724e512088291604100d6b17709b56615764ef9ba3f416a103d8abc88f783"
+    },
+    "large_peach.png": {
+      "size": [
+        80,
+        80
+      ],
+      "sha256": "08a8ebd3fbfc6a3af1b5318fb157f436f4be5c26a1d66284a5c7bfb0bb56e306"
+    },
+    "large_plum.png": {
+      "size": [
+        80,
+        80
+      ],
+      "sha256": "55e965e675ba6fcb4a7ea98ff670d60a41663d3d31c2c241a7c92d36bb3d4bae"
+    },
+    "small_blueberry.png": {
+      "size": [
+        80,
+        80
+      ],
+      "sha256": "5410df3357dd05534f3c644d6fc957868560cda63e8abb81a03d36b7f401cc38"
+    },
+    "small_cherry.png": {
+      "size": [
+        80,
+        80
+      ],
+      "sha256": "3d0a6dbf33f9f3cf63597923bd21c3cad59c4ab539e03c59932eec2ab18ef50b"
+    },
+    "small_kumquat.png": {
+      "size": [
+        80,
+        80
+      ],
+      "sha256": "655934e0c2b3062ded3f286421283bd896b4c5aa734f1cdc8a412545c043bfb2"
+    },
+    "small_lime.png": {
+      "size": [
+        80,
+        80
+      ],
+      "sha256": "f2c9c085d5a553b89809bcebf4a29f12fc226580779926f891dccb254cdb5977"
+    },
+    "small_strawberry.png": {
+      "size": [
+        80,
+        80
+      ],
+      "sha256": "eb05e1c828b143943c641060f2b88f5045aff3da706b500a6c87595a72d75033"
+    }
+  }
+}

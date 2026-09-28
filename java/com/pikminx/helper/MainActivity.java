@@ -1,5 +1,6 @@
 package com.pikminx.helper;
 
+import android.Manifest;
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
 import android.content.ComponentName;
@@ -20,13 +21,21 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import com.pikminx.helper.platform.config.RemoteConfigClient;
+import com.pikminx.helper.platform.settings.SettingsStore;
+import com.pikminx.helper.platform.update.ApkUpdateManager;
+import com.pikminx.helper.platform.update.InstallStateModel;
+
 /**
- * 應用程式的設定入口。
+ * 應用程式的主導覽與設定入口。
  *
- * <p>這個 Activity 只負責設定資料與開啟系統權限頁面；實際的畫面擷取與點擊
- * 由 {@link PetalAccessibilityService} 執行，避免 UI 層和自動化流程互相耦合。</p>
+ * <p>蘑菇功能身份保留在懸浮控制中但目前凍結且不可互動；此 Activity 僅負責一般設定、
+ * 權限與系統設定入口。</p>
  */
 public final class MainActivity extends Activity {
+    static final String EXTRA_REQUEST_LOCATION_PERMISSION =
+            "com.pikminx.helper.REQUEST_LOCATION_PERMISSION";
+    private static final int LOCATION_PERMISSION_REQUEST_CODE = 4201;
     private static final int BACKGROUND = Color.rgb(243, 246, 242);
     private static final int SURFACE = Color.WHITE;
     private static final int SURFACE_SOFT = Color.rgb(246, 248, 246);
@@ -38,29 +47,40 @@ public final class MainActivity extends Activity {
     private static final int BRAND_BACKGROUND = Color.rgb(231, 245, 236);
     private static final int WARNING_BACKGROUND = Color.rgb(255, 245, 217);
     private static final int WARNING_TEXT = Color.rgb(155, 106, 0);
-    private static final String COMMUNITY_URL =
-            "https://line.me/ti/g2/kBeFvQzEdGSJ3J48e9tkkEljK2wq0Mxb_FauOA?utm_source=invitation&utm_medium=link_copy&utm_campaign=default";
     private static final String SPONSOR_URL =
             "https://payment.opay.tw/Broadcaster/Donate/0CB6EDA6EAB8577A8D33F1E8E346BC2A";
-
     private TextView serviceStatus;
+    private TextView remoteConfigNotice;
+    private Button remoteConfigUpdate;
     private Button overlayToggle;
     private SettingsStore settings;
-
+    private boolean updateInProgress;
+    private ApkUpdateManager.Callback installStateCallback;
+    private long remoteConfigRequestToken;
+    private TextView mockLocationStatus;
+    private TextView locationPermissionStatus;
+    private TextView locationServiceStatus;
+    private boolean finishAfterLocationPermission;
     /** 建立乾淨、可捲動且適合小螢幕的設定頁。 */
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         settings = new SettingsStore(this);
+        installStateCallback = this::renderInstallState;
         getWindow().setStatusBarColor(PRIMARY_DARK);
         getWindow().setNavigationBarColor(BACKGROUND);
         setContentView(buildScreen());
+        if (getIntent().getBooleanExtra(EXTRA_REQUEST_LOCATION_PERMISSION, false)) {
+            finishAfterLocationPermission = true;
+            getWindow().getDecorView().post(this::requestLocationPermission);
+        }
     }
 
     /** 每次回到頁面時同步無障礙服務狀態與懸浮窗狀態。 */
     @Override
     protected void onResume() {
         super.onResume();
+        ApkUpdateManager.observe(this, installStateCallback);
         if (serviceStatus != null) {
             boolean enabled = isServiceEnabled();
             serviceStatus.setText(enabled
@@ -71,6 +91,39 @@ public final class MainActivity extends Activity {
             serviceStatus.setTextColor(enabled ? PRIMARY : MUTED);
             updateOverlayButton();
         }
+        refreshLocationReadiness();
+        refreshRemoteConfig();
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        if (intent != null && intent.getBooleanExtra(EXTRA_REQUEST_LOCATION_PERMISSION, false)) {
+            finishAfterLocationPermission = true;
+            getWindow().getDecorView().post(this::requestLocationPermission);
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(
+            int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == LOCATION_PERMISSION_REQUEST_CODE) {
+            refreshLocationReadiness();
+            if (finishAfterLocationPermission) {
+                finishAfterLocationPermission = false;
+                finish();
+            }
+        }
+    }
+
+    @Override
+    protected void onDestroy() {
+        remoteConfigRequestToken++;
+        ApkUpdateManager.clearObserver(installStateCallback);
+        installStateCallback = null;
+        super.onDestroy();
     }
 
     /** 建立畫布中的單一底部導航；各頁只投影既有設定與入口。 */
@@ -240,14 +293,6 @@ public final class MainActivity extends Activity {
 
         LinearLayout service = card();
 
-        serviceStatus = text("", 15, MUTED);
-        serviceStatus.setContentDescription(getString(R.string.main_service_status_description));
-        service.addView(statusRow(
-                R.string.main_service_row_title,
-                R.string.main_service_row_description,
-                serviceStatus));
-        service.addView(divider(), matchParams());
-
         LinearLayout overlayRow = verticalLayout(0, dp(12), 0, 0);
         overlayRow.addView(text(getString(R.string.main_overlay_row_title), 15, TEXT));
         overlayRow.addView(sectionDescription(R.string.main_overlay_row_description));
@@ -275,6 +320,14 @@ public final class MainActivity extends Activity {
         permissions.addView(riskAccepted, matchParams());
         addSpace(permissions, 8);
 
+        serviceStatus = text("", 15, MUTED);
+        serviceStatus.setContentDescription(getString(R.string.main_service_status_description));
+        permissions.addView(statusRow(
+                R.string.main_service_row_title,
+                R.string.main_service_row_description,
+                serviceStatus));
+        permissions.addView(divider(), matchParams());
+
         Button accessibility = secondaryButton(R.string.main_open_accessibility);
         accessibility.setOnClickListener(view -> {
             if (!riskAccepted.isChecked()) {
@@ -286,18 +339,52 @@ public final class MainActivity extends Activity {
         permissions.addView(accessibility, matchParams());
         addSpace(permissions, 8);
 
+        Button mockLocationSettings = secondaryButton(R.string.main_open_mock_location_settings);
+        mockLocationSettings.setOnClickListener(view -> openMockLocationSettings());
+        permissions.addView(mockLocationSettings, matchParams());
+        mockLocationStatus = text("", 14, MUTED);
+        mockLocationStatus.setContentDescription(
+                getString(R.string.main_mock_location_status_description));
+        mockLocationStatus.setPadding(0, dp(6), 0, 0);
+        permissions.addView(mockLocationStatus, matchParams());
+        addSpace(permissions, 8);
+
+        Button requestLocation = secondaryButton(R.string.main_request_location_permission);
+        requestLocation.setOnClickListener(view -> requestLocationPermission());
+        permissions.addView(requestLocation, matchParams());
+        locationPermissionStatus = text("", 14, MUTED);
+        locationPermissionStatus.setContentDescription(
+                getString(R.string.main_location_permission_status_description));
+        locationPermissionStatus.setPadding(0, dp(6), 0, 0);
+        permissions.addView(locationPermissionStatus, matchParams());
+        locationServiceStatus = text("", 14, MUTED);
+        locationServiceStatus.setContentDescription(
+                getString(R.string.main_location_service_status_description));
+        locationServiceStatus.setPadding(0, dp(6), 0, 0);
+        permissions.addView(locationServiceStatus, matchParams());
+        Button locationSettings = secondaryButton(R.string.main_open_location_settings);
+        locationSettings.setOnClickListener(view -> openLocationSettings());
+        permissions.addView(locationSettings, matchParams());
+        addSpace(permissions, 8);
+
+        remoteConfigNotice = text("", 14, MUTED);
+        remoteConfigNotice.setVisibility(View.GONE);
+        permissions.addView(remoteConfigNotice, matchParams());
+        remoteConfigUpdate = secondaryButton(R.string.main_download_update);
+        remoteConfigUpdate.setVisibility(View.GONE);
+        remoteConfigUpdate.setOnClickListener(view -> {
+            Object tag = view.getTag();
+            if (tag instanceof RemoteConfigClient.Status) {
+                startUpdate((RemoteConfigClient.Status) tag);
+            }
+        });
+        permissions.addView(remoteConfigUpdate, matchParams());
         content.addView(permissions, matchParams());
         addSpace(content, 18);
 
         LinearLayout links = card();
         links.addView(sectionTitle(R.string.main_links_title));
         addSpace(links, 12);
-
-        Button community = secondaryButton(R.string.main_open_community);
-        community.setOnClickListener(view -> openExternalLink(COMMUNITY_URL));
-        links.addView(sectionDescription(R.string.main_links_description_community));
-        links.addView(community, matchParams());
-        addSpace(links, 8);
 
         Button sponsor = secondaryButton(R.string.main_open_sponsor);
         sponsor.setOnClickListener(view -> openExternalLink(SPONSOR_URL));
@@ -311,6 +398,221 @@ public final class MainActivity extends Activity {
         help.addView(sectionDescription(R.string.main_help_description));
         content.addView(help, matchParams());
         return scroll;
+    }
+
+    /** Refreshes all location prerequisites when the Activity becomes visible again. */
+    private void refreshLocationReadiness() {
+        if (mockLocationStatus == null
+                || locationPermissionStatus == null
+                || locationServiceStatus == null) {
+            return;
+        }
+        MockLocationReadiness.LocationPermissionStatus permissionStatus =
+                MockLocationReadiness.locationPermissionStatus(this);
+        boolean locationServiceReady = MockLocationReadiness.isLocationServiceEnabled(this);
+        boolean mockLocationSelected = MockLocationReadiness.isMockLocationAllowed(this);
+
+        locationPermissionStatus.setText(locationPermissionStatusResource(permissionStatus));
+        locationPermissionStatus.setTextColor(
+                permissionStatus == MockLocationReadiness.LocationPermissionStatus.PRECISE_LOCATION_READY
+                        ? PRIMARY : WARNING_TEXT);
+        locationServiceStatus.setText(locationServiceReady
+                ? R.string.main_location_service_ready
+                : R.string.main_location_service_disabled);
+        locationServiceStatus.setTextColor(locationServiceReady ? PRIMARY : WARNING_TEXT);
+        mockLocationStatus.setText(mockLocationSelected
+                ? R.string.main_mock_location_selected
+                : R.string.main_mock_location_not_selected);
+        mockLocationStatus.setTextColor(mockLocationSelected ? PRIMARY : WARNING_TEXT);
+    }
+
+    private int locationPermissionStatusResource(
+            MockLocationReadiness.LocationPermissionStatus status) {
+        if (status == null) {
+            return R.string.main_location_permission_required;
+        }
+        return switch (status) {
+            case PRECISE_LOCATION_READY -> R.string.main_location_permission_ready;
+            case COARSE_ONLY -> R.string.main_location_permission_coarse;
+            case NO_LOCATION_PERMISSION -> R.string.main_location_permission_required;
+        };
+    }
+
+    private void requestLocationPermission() {
+        if (MockLocationReadiness.hasFineLocationPermission(this)) {
+            refreshLocationReadiness();
+            if (finishAfterLocationPermission) {
+                finishAfterLocationPermission = false;
+                finish();
+            }
+            return;
+        }
+        requestPermissions(
+                new String[] {
+                        Manifest.permission.ACCESS_FINE_LOCATION,
+                        Manifest.permission.ACCESS_COARSE_LOCATION
+                },
+                LOCATION_PERMISSION_REQUEST_CODE);
+    }
+
+    /** Opens the public Developer Options page; Android owns mock-location selection. */
+    private void openMockLocationSettings() {
+        Intent developerSettings = new Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS);
+        try {
+            if (developerSettings.resolveActivity(getPackageManager()) != null) {
+                startActivity(developerSettings);
+            } else {
+                startActivity(new Intent(Settings.ACTION_SETTINGS));
+            }
+            Toast.makeText(
+                    this,
+                    R.string.main_mock_location_settings_guidance,
+                    Toast.LENGTH_LONG).show();
+        } catch (ActivityNotFoundException exception) {
+            Toast.makeText(
+                    this,
+                    R.string.main_mock_location_settings_unavailable,
+                    Toast.LENGTH_LONG).show();
+        }
+    }
+
+    /** Opens the Android system location switch without changing it programmatically. */
+    private void openLocationSettings() {
+        try {
+            startActivity(new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS));
+        } catch (ActivityNotFoundException exception) {
+            Toast.makeText(
+                    this,
+                    R.string.main_location_settings_unavailable,
+                    Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    /** 讀取遠端版本與服務狀態，並在更新資料完整時提供覆蓋安裝入口。 */
+    private void refreshRemoteConfig() {
+        if (remoteConfigNotice == null || remoteConfigUpdate == null) {
+            return;
+        }
+        final long requestToken = ++remoteConfigRequestToken;
+        RemoteConfigClient.fetch(this, remoteConfig -> {
+            if (requestToken != remoteConfigRequestToken || isFinishing() || isDestroyed()) {
+                return;
+            }
+            InstallStateModel.Snapshot installState = ApkUpdateManager.currentState(this);
+            boolean installActive = InstallStateModel.isInFlight(installState);
+            if (remoteConfig == null) {
+                remoteConfigNotice.setVisibility(View.GONE);
+                if (installActive) {
+                    remoteConfigUpdate.setTag(null);
+                    renderInstallState(installState);
+                } else {
+                    remoteConfigUpdate.setVisibility(View.GONE);
+                }
+                return;
+            }
+            boolean blocked = remoteConfig.blocksAutomation(BuildConfig.VERSION_CODE);
+            boolean updateAvailable = remoteConfig.updateAvailable(BuildConfig.VERSION_CODE);
+            if (!blocked && !updateAvailable) {
+                remoteConfigNotice.setVisibility(View.GONE);
+                if (installActive) {
+                    remoteConfigUpdate.setTag(null);
+                    renderInstallState(installState);
+                } else {
+                    remoteConfigUpdate.setVisibility(View.GONE);
+                }
+                return;
+            }
+
+            String notice;
+            if (blocked) {
+                notice = remoteConfig.message();
+            } else if (!remoteConfig.latestVersionName().isEmpty()) {
+                notice = getString(
+                        R.string.main_update_available,
+                        remoteConfig.latestVersionName());
+            } else {
+                notice = getString(R.string.main_update_available_generic);
+            }
+            remoteConfigNotice.setText(notice);
+            remoteConfigNotice.setTextColor(blocked ? WARNING_TEXT : PRIMARY_DARK);
+            remoteConfigNotice.setVisibility(View.VISIBLE);
+
+            if (installActive) {
+                remoteConfigUpdate.setTag(
+                        remoteConfig.hasInstallableUpdate(BuildConfig.VERSION_CODE)
+                                ? remoteConfig
+                                : null);
+                renderInstallState(installState);
+            } else if (remoteConfig.hasInstallableUpdate(BuildConfig.VERSION_CODE)) {
+                remoteConfigUpdate.setTag(remoteConfig);
+                remoteConfigUpdate.setEnabled(true);
+                remoteConfigUpdate.setText(remoteConfig.forceUpdate()
+                                ? R.string.main_download_required_update
+                                : R.string.main_download_update);
+                remoteConfigUpdate.setVisibility(View.VISIBLE);
+            } else {
+                remoteConfigUpdate.setTag(null);
+                remoteConfigUpdate.setVisibility(View.GONE);
+            }
+        });
+    }
+
+    private void renderInstallState(InstallStateModel.Snapshot installState) {
+        if (installState == null || remoteConfigUpdate == null
+                || isFinishing() || isDestroyed()) {
+            return;
+        }
+        updateInProgress = InstallStateModel.isInFlight(installState);
+        if (updateInProgress) {
+            remoteConfigUpdate.setEnabled(false);
+            remoteConfigUpdate.setText(
+                    installState.state() == InstallStateModel.State.DOWNLOADING
+                            || installState.state() == InstallStateModel.State.VERIFIED
+                            ? R.string.main_downloading_update
+                            : R.string.main_update_installer_ready);
+            remoteConfigUpdate.setVisibility(View.VISIBLE);
+            return;
+        }
+        Object tag = remoteConfigUpdate.getTag();
+        if (tag instanceof RemoteConfigClient.Status status) {
+            remoteConfigUpdate.setEnabled(true);
+            remoteConfigUpdate.setText(status.forceUpdate()
+                    ? R.string.main_download_required_update
+                    : R.string.main_download_update);
+        } else if (installState.state() == InstallStateModel.State.SUCCESS
+                || installState.state() == InstallStateModel.State.FAILURE) {
+            remoteConfigUpdate.setVisibility(View.GONE);
+        }
+    }
+
+    /** 取得未知來源權限後下載、驗證並交由 Android 系統覆蓋安裝。 */
+    private void startUpdate(RemoteConfigClient.Status status) {
+        if (ApkUpdateManager.isInFlight(this)) {
+            renderInstallState(ApkUpdateManager.currentState(this));
+            return;
+        }
+        if (!status.hasInstallableUpdate(BuildConfig.VERSION_CODE)) {
+            Toast.makeText(this, R.string.main_update_config_invalid, Toast.LENGTH_LONG).show();
+            return;
+        }
+        if (!getPackageManager().canRequestPackageInstalls()) {
+            Intent permission = new Intent(
+                    Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                    Uri.parse("package:" + getPackageName()));
+            startActivity(permission);
+            Toast.makeText(
+                    this, R.string.main_update_permission_required, Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        updateInProgress = true;
+        remoteConfigUpdate.setEnabled(false);
+        remoteConfigUpdate.setText(R.string.main_downloading_update);
+        ApkUpdateManager.downloadAndInstall(
+                this,
+                status,
+                installStateCallback,
+                UpdateInstallReceiver.statusReceiverComponent(this));
     }
 
     private ScrollView screenScroll() {

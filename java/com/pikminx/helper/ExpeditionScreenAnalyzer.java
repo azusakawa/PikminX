@@ -30,9 +30,11 @@ final class ExpeditionScreenAnalyzer {
         String confirmationKey(int width, int height) {
             int xBucket = Math.round(x * 10f / Math.max(1, width));
             int yBucket = Math.round(y * 10f / Math.max(1, height));
-            return kind.name() + ":" + xBucket + ":" + yBucket;
+            return kind.name() + ":" + normalize(label) + ":" + xBucket + ":" + yBucket;
         }
     }
+
+    record TitleEvidence(ItemKind kind, String label) {}
 
     record Point(int x, int y) {}
 
@@ -84,7 +86,33 @@ final class ExpeditionScreenAnalyzer {
             int width,
             int height,
             IntBinaryOperator pixelAt) {
-        Screen screen = classify(tokens);
+        return classifyWithBaseScreen(classify(tokens), tokens, width, height, pixelAt);
+    }
+
+    /**
+     * A completed expedition can temporarily cover the expedition list with a modal.
+     * The title is required so a normal list card's "領取" text is never treated as
+     * this blocking dialog.
+     */
+    static boolean isReturnedExpeditionDialog(List<PetalMatcher.Token> tokens) {
+        return containsAny(
+                joined(tokens),
+                "皮克敏從探險回來了",
+                "皮克敏从探险回来了");
+    }
+
+    /** Adds visual evidence to a base classification without recalculating OCR rules. */
+    static Screen classifyWithBaseScreen(
+            Screen baseScreen,
+            List<PetalMatcher.Token> tokens,
+            int width,
+            int height,
+            IntBinaryOperator pixelAt) {
+        Screen screen = baseScreen == null ? classify(tokens) : baseScreen;
+        if (screen == Screen.UNKNOWN
+                && hasDetailActionContext(tokens, width, height, pixelAt)) {
+            return Screen.DETAIL;
+        }
         if (screen == Screen.UNKNOWN
                 && hasSelectionCounter(joined(tokens))
                 && findPikminSearchButton(width, height, pixelAt) != null) {
@@ -94,13 +122,100 @@ final class ExpeditionScreenAnalyzer {
                 ? Screen.EXPLORE_LIST : screen;
     }
 
-    /** 詳細頁已經兩幀確認後，按遊戲內容區固定的相對按鈕中心，不再依賴按鈕 OCR。 */
-    static Point detailActionCenter(int width, int height) {
-        int maxX = Math.max(0, width - 1);
-        int maxY = Math.max(0, height - 1);
-        return new Point(
-                Math.min(maxX, Math.max(0, Math.round(width * 0.50f))),
-                Math.min(maxY, Math.max(0, Math.round(height * 0.75f))));
+    /**
+     * Some expedition detail variants replace the standard page heading with a decoration
+     * promotion.  Keep the action text and detail metadata together so a list/status frame
+     * containing only one of them is not promoted to a detail page.
+     */
+    private static boolean hasDetailActionContext(
+            List<PetalMatcher.Token> tokens,
+            int width,
+            int height,
+            IntBinaryOperator pixelAt) {
+        if (findDetailAction(tokens, width, height, pixelAt) == null) {
+            return false;
+        }
+        String text = joined(tokens);
+        return containsAny(text,
+                "距離", "距離：", "發現日", "发现日", "重量",
+                "變更為稀有飾品", "变更为稀有饰品");
+    }
+
+    /** OCR or a unique current-frame outline; never fall back to a proportional tap point. */
+    static Point findDetailActionForVerifiedScreen(
+            Screen screen,
+            List<PetalMatcher.Token> tokens,
+            int width,
+            int height,
+            IntBinaryOperator pixelAt) {
+        if (screen != Screen.DETAIL) return null;
+        Point action = findDetailAction(tokens, width, height, pixelAt);
+        return action != null ? action : findDetailButtonOutline(width, height, pixelAt);
+    }
+
+    /** The ROI limits perception; every returned coordinate comes from the detected outline. */
+    private static Point findDetailButtonOutline(int width, int height, IntBinaryOperator pixelAt) {
+        if (width < 1 || height < 1 || pixelAt == null) return null;
+        int left = Math.round(width * 0.15f), right = Math.round(width * 0.85f);
+        int top = Math.round(height * 0.20f), bottom = Math.round(height * 0.90f);
+        int columns = right - left, rows = bottom - top;
+        if (columns < 1 || rows < 1) return null;
+        boolean[] teal = new boolean[columns * rows];
+        boolean[] seen = new boolean[teal.length];
+        int[] queue = new int[teal.length];
+        for (int y = 0; y < rows; y++) {
+            for (int x = 0; x < columns; x++) {
+                int color = pixelAt.applyAsInt(left + x, top + y);
+                int red = (color >>> 16) & 255, green = (color >>> 8) & 255, blue = color & 255;
+                teal[y * columns + x] = green >= red + 40 && blue >= red + 30 && green >= blue;
+            }
+        }
+        Point found = null;
+        for (int seed = 0; seed < teal.length; seed++) {
+            if (!teal[seed] || seen[seed]) continue;
+            int head = 0, tail = 1;
+            queue[0] = seed; seen[seed] = true;
+            int minX = seed % columns, maxX = minX, minY = seed / columns, maxY = minY;
+            while (head < tail) {
+                int index = queue[head++], x = index % columns, y = index / columns;
+                minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+                minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+                for (int dy = -1; dy <= 1; dy++) for (int dx = -1; dx <= 1; dx++) {
+                    int nx = x + dx, ny = y + dy;
+                    if (nx < 0 || nx >= columns || ny < 0 || ny >= rows) continue;
+                    int next = ny * columns + nx;
+                    if (teal[next] && !seen[next]) {
+                        seen[next] = true; queue[tail++] = next;
+                    }
+                }
+            }
+            int w = maxX - minX + 1, h = maxY - minY + 1;
+            if (minX == 0 || maxX == columns - 1 || minY == 0 || maxY == rows - 1
+                    || w < width * 0.20f || w > width * 0.70f
+                    || h < height * 0.03f || h > height * 0.12f
+                    || w < h * 2 || w > h * 6
+                    || tail < w * h * 0.015f || tail > w * h * 0.25f) continue;
+            int centerX = (minX + maxX) / 2, centerY = (minY + maxY) / 2;
+            if (!tealNear(teal, columns, rows, centerX, minY)
+                    || !tealNear(teal, columns, rows, centerX, maxY)
+                    || !tealNear(teal, columns, rows, minX, centerY)
+                    || !tealNear(teal, columns, rows, maxX, centerY)
+                    || tealNear(teal, columns, rows, minX, minY)
+                    || tealNear(teal, columns, rows, maxX, minY)
+                    || tealNear(teal, columns, rows, minX, maxY)
+                    || tealNear(teal, columns, rows, maxX, maxY)) continue;
+            if (found != null) return null;
+            found = new Point(left + centerX, top + centerY);
+        }
+        return found;
+    }
+
+    private static boolean tealNear(boolean[] mask, int width, int height, int x, int y) {
+        for (int dy = -2; dy <= 2; dy++) for (int dx = -2; dx <= 2; dx++) {
+            int nx = x + dx, ny = y + dy;
+            if (nx >= 0 && nx < width && ny >= 0 && ny < height && mask[ny * width + nx]) return true;
+        }
+        return false;
     }
 
     /** 只使用詳細頁中央偏下操作區的 OCR，並容許按鈕文字被拆成相鄰兩段。 */
@@ -240,8 +355,8 @@ final class ExpeditionScreenAnalyzer {
             PetalMatcher.Token token, int width, int height) {
         return token.centerX() >= width * 0.20f
                 && token.centerX() <= width * 0.80f
-                && token.centerY() >= height * 0.60f
-                && token.centerY() <= height * 0.82f;
+                && token.centerY() >= height * 0.20f
+                && token.centerY() <= height * 0.90f;
     }
 
     static boolean looksLikeExploreList(List<PetalMatcher.Token> tokens) {
@@ -323,6 +438,20 @@ final class ExpeditionScreenAnalyzer {
                 .orElse(null);
     }
 
+    /** Disambiguates the Green Apple visual exception without weakening visual gates. */
+    static TitleEvidence greenAppleTitleEvidence(List<PetalMatcher.Token> tokens) {
+        String fruit = "";
+        String pot = "";
+        for (PetalMatcher.Token token : tokens) {
+            String text = normalize(token.text());
+            if (containsAny(text, "蘋果", "苹果")) fruit = text;
+            if (containsAny(text, "花苗")) pot = text;
+        }
+        if (!fruit.isEmpty() && pot.isEmpty()) return new TitleEvidence(ItemKind.FRUIT, fruit);
+        if (!pot.isEmpty() && fruit.isEmpty()) return new TitleEvidence(ItemKind.POT, pot);
+        return null;
+    }
+
     /** 九種花盆共通外觀：上半部有綠芽，中間有橫向棕色土壤。 */
     static boolean looksLikePotStyle(
             int width,
@@ -390,12 +519,12 @@ final class ExpeditionScreenAnalyzer {
 
     static boolean hasExploreNavigationAnchor(
             List<PetalMatcher.Token> tokens, int width, int height) {
-        return findExactExploreNavigationAnchor(tokens, width, height) != null;
+        return findExploreNavigationAnchorForClassifier(tokens, width, height) != null;
     }
 
     private static boolean hasScrolledExploreListEvidence(
             List<PetalMatcher.Token> tokens, int width, int height) {
-        Point anchor = findExactExploreNavigationAnchor(tokens, width, height);
+        Point anchor = findExploreNavigationAnchorForClassifier(tokens, width, height);
         if (anchor == null) {
             return false;
         }
@@ -413,11 +542,16 @@ final class ExpeditionScreenAnalyzer {
         return false;
     }
 
-    private static Point findExactExploreNavigationAnchor(
+    /**
+     * Accept the Xiaomi OCR substitution observed on the return-to-list frame.
+     * The positional gate remains mandatory, and list classification additionally
+     * requires card evidence in hasScrolledExploreListEvidence().
+     */
+    private static Point findExploreNavigationAnchorForClassifier(
             List<PetalMatcher.Token> tokens, int width, int height) {
         for (PetalMatcher.Token token : tokens) {
             String text = normalize(token.text());
-            if ((text.equals("探險") || text.equals("探险"))
+            if (isExploreNavigationLabel(text)
                     && token.centerY() > height * 0.08f
                     && token.centerY() < height * 0.65f
                     && (width == Integer.MAX_VALUE
@@ -429,12 +563,19 @@ final class ExpeditionScreenAnalyzer {
         return null;
     }
 
+    private static boolean isExploreNavigationLabel(String text) {
+        // On the connected Xiaomi device, 探險 was recognized as 速險 while
+        // the surrounding list/card OCR remained valid.
+        return text.equals("探險") || text.equals("探险")
+                || text.equals("速險") || text.equals("速险");
+    }
+
     /**  同樣先定位探險頁籤，再從該安全錨點向上拉起面板。 */
     static Point findExploreTabAnchor(
             List<PetalMatcher.Token> tokens, int width, int height) {
         for (PetalMatcher.Token token : tokens) {
             String text = normalize(token.text());
-            if (containsAny(text, "探險", "探险")
+            if ((isExploreNavigationLabel(text) || containsAny(text, "探險", "探险"))
                     && token.centerY() > height * 0.08f
                     && token.centerY() < height * 0.65f
                     && (width == Integer.MAX_VALUE || token.centerX() > width * 0.40f)) {
@@ -462,6 +603,12 @@ final class ExpeditionScreenAnalyzer {
             }
         }
         return null;
+    }
+
+    /** Current selected-tab OCR may include an isolated border glyph, e.g. "|探險". */
+    static boolean isExploreTabLabel(String text) {
+        String label = normalize(text).replaceAll("^[\\p{P}\\p{S}]+|[\\p{P}\\p{S}]+$", "");
+        return label.equals("探險") || label.equals("探险");
     }
 
     /** 僅接受皮克敏選擇控制區內、完整匹配的「自動」文字中心。 */
@@ -507,10 +654,12 @@ final class ExpeditionScreenAnalyzer {
         int bottom = Math.min(height - 1, Math.round(height * 0.48f));
         int radius = Math.max(6, Math.round(height * 0.012f));
         int[] rowCounts = new int[bottom - top + 1];
+        long[] rowXSums = new long[rowCounts.length];
         for (int y = top; y <= bottom; y++) {
             for (int x = left; x <= right; x++) {
                 if (neutralDarkControl(pixelAt.applyAsInt(x, y))) {
                     rowCounts[y - top]++;
+                    rowXSums[y - top] += x;
                 }
             }
         }
@@ -532,14 +681,15 @@ final class ExpeditionScreenAnalyzer {
         if (bestStart < 0 || bestCount < Math.max(12, Math.round(width * 0.05f))) {
             return null;
         }
-        long weightedY = 0;
+        long weightedX = 0, weightedY = 0;
         int count = 0;
         for (int index = bestStart; index < bestStart + window; index++) {
+            weightedX += rowXSums[index];
             weightedY += (long) (top + index) * rowCounts[index];
             count += rowCounts[index];
         }
         return count == 0 ? null : new Point(
-                Math.round(width * 0.09f), Math.round((float) weightedY / count));
+                Math.round((float) weightedX / count), Math.round((float) weightedY / count));
     }
 
     static boolean hasFullSelection(List<PetalMatcher.Token> tokens) {
@@ -568,63 +718,94 @@ final class ExpeditionScreenAnalyzer {
         return -1;
     }
 
-    /**
-     * 尋找派遣結果頁左下角的亮色 X。門檻取自  的外觀思路，
-     * 但座標、畫素與判斷全部由 PikminX 當前截圖重新計算。
-     */
+    /** Returns the current game's selection capacity, or -1 when the counter is absent. */
+    static int pikminSelectionLimit(List<PetalMatcher.Token> tokens) {
+        Matcher matcher = COUNTER.matcher(joined(tokens));
+        while (matcher.find()) {
+            int limit = Integer.parseInt(matcher.group(2));
+            if (limit >= 1 && limit <= 12) return limit;
+        }
+        return -1;
+    }
+
+    /** Finds the fresh green circular X in the lower-left post-GO result state. */
     static Point findResultClose(Bitmap bitmap) {
-        int width = bitmap.getWidth();
-        int height = bitmap.getHeight();
-        int left = 0;
-        int right = Math.max(1, Math.round(width * 0.18f));
-        int top = Math.round(height * 0.82f);
-        int bottom = Math.min(height - 1, Math.round(height * 0.955f));
-        int step = Math.max(2, width / 320);
-        int bestX = -1;
-        int bestY = -1;
-        float bestScore = 0f;
-        for (int y = top; y <= bottom; y += step) {
-            for (int x = left; x < right; x += step) {
-                if (!brightNeutral(bitmap.getPixel(x, y))) {
-                    continue;
-                }
-                int radius = Math.max(8, width / 45);
-                int darkDiagonal = 0;
-                int samples = 0;
-                for (int delta = -radius; delta <= radius; delta += Math.max(2, step)) {
-                    int x1 = x + delta;
-                    int y1 = y + delta;
-                    int x2 = x + delta;
-                    int y2 = y - delta;
-                    if (inside(x1, y1, width, height)) {
-                        samples++;
-                        if (darkTeal(bitmap.getPixel(x1, y1))) {
-                            darkDiagonal++;
+        return findResultClose(bitmap.getWidth(), bitmap.getHeight(), bitmap::getPixel);
+    }
+
+    /** Pure pixel overload used by geometry regression tests. */
+    static Point findResultClose(int width, int height, IntBinaryOperator pixelAt) {
+        if (width < 32 || height < 64 || pixelAt == null) return null;
+        int step = Math.max(2, width / 320), centerStep = step * 2;
+        int right = Math.max(1, Math.round(width * 0.24f));
+        int top = Math.max(0, height - Math.round(width * .28f));
+        int bottom = Math.min(height - 1, height - Math.round(width * .02f));
+        Point best = null; float bestScore = -1;
+        for (float radiusFraction : new float[] {.045f, .055f, .065f}) {
+            int radius = Math.max(centerStep, Math.round(width * radiusFraction));
+            for (int centerY = top + radius; centerY + radius <= bottom; centerY += centerStep) {
+                for (int centerX = radius; centerX + radius <= right; centerX += centerStep) {
+                    int ring = 0, green = 0;
+                    for (int y = centerY - radius; y <= centerY + radius; y += centerStep) {
+                        for (int x = centerX - radius; x <= centerX + radius; x += centerStep) {
+                            long distance = (long) (x - centerX) * (x - centerX)
+                                    + (long) (y - centerY) * (y - centerY);
+                            if (distance < radius * radius * .48f * .48f
+                                    || distance > radius * radius * .88f * .88f) continue;
+                            ring++;
+                            if (resultCloseGreen(pixelAt.applyAsInt(x, y))) green++;
                         }
                     }
-                    if (inside(x2, y2, width, height)) {
-                        samples++;
-                        if (darkTeal(bitmap.getPixel(x2, y2))) {
-                            darkDiagonal++;
+                    if (ring == 0 || green < ring * .80f) continue;
+                    int inner = Math.round(radius * .55f), light = 0;
+                    int minX = width, minY = height, maxX = -1, maxY = -1;
+                    for (int y = centerY - inner; y <= centerY + inner; y += step) {
+                        for (int x = centerX - inner; x <= centerX + inner; x += step) {
+                            if ((long) (x - centerX) * (x - centerX)
+                                    + (long) (y - centerY) * (y - centerY) > (long) inner * inner
+                                    || !resultCloseLight(pixelAt.applyAsInt(x, y))) continue;
+                            light++; minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+                            minY = Math.min(minY, y); maxY = Math.max(maxY, y);
                         }
                     }
-                }
-                float diagonalRatio = samples == 0 ? 0f : (float) darkDiagonal / samples;
-                float anchorPenalty = Math.abs(x - width * 0.085f) / width
-                        + Math.abs(y - height * 0.91f) / height;
-                float score = diagonalRatio - anchorPenalty;
-                if (diagonalRatio >= 0.28f && score > bestScore) {
-                    bestScore = score;
-                    bestX = x;
-                    bestY = y;
+                    if (light < 12 || maxX - minX < radius * .35f || maxY - minY < radius * .35f
+                            || maxX - minX > radius * .90f || maxY - minY > radius * .90f) continue;
+                    int lightCenterX = (minX + maxX) / 2, lightCenterY = (minY + maxY) / 2;
+                    int boxWidth = maxX - minX, boxHeight = maxY - minY;
+                    if (Math.max(boxWidth, boxHeight) > Math.min(boxWidth, boxHeight) * 1.5f
+                            || Math.abs(lightCenterX - centerX) > radius * .25f
+                            || Math.abs(lightCenterY - centerY) > radius * .25f) continue;
+                    int[] quadrants = new int[4];
+                    for (int y = centerY - inner; y <= centerY + inner; y += step) {
+                        for (int x = centerX - inner; x <= centerX + inner; x += step) {
+                            if (!resultCloseLight(pixelAt.applyAsInt(x, y))) continue;
+                            int dx = x - lightCenterX, dy = y - lightCenterY;
+                            if (dx == 0 || dy == 0) continue;
+                            quadrants[(dx > 0 ? 1 : 0) + (dy > 0 ? 2 : 0)]++;
+                        }
+                    }
+                    if (java.util.Arrays.stream(quadrants).min().orElse(0) < 2) continue;
+                    float score = green / (float) ring + light / 100f;
+                    if (score > bestScore) {
+                        bestScore = score; best = new Point(lightCenterX, lightCenterY);
+                    }
                 }
             }
         }
-        return bestX < 0 ? null : resultCloseAnchor(width, height);
+        return best;
     }
 
-    static Point resultCloseAnchor(int width, int height) {
-        return new Point(Math.round(width * 0.098f), Math.round(height * 0.938f));
+    private static boolean resultCloseGreen(int color) {
+        int red = (color >>> 16) & 255, green = (color >>> 8) & 255, blue = color & 255;
+        return green >= 70 && green >= red + 8 && green >= blue - 25
+                && Math.max(red, blue) - Math.min(red, blue) >= 8;
+    }
+
+    private static boolean resultCloseLight(int color) {
+        int red = (color >>> 16) & 255, green = (color >>> 8) & 255, blue = color & 255;
+        int minimum = Math.min(red, Math.min(green, blue));
+        int maximum = Math.max(red, Math.max(green, blue));
+        return minimum >= 175 && maximum - minimum <= 80;
     }
 
     static String joined(List<PetalMatcher.Token> tokens) {
@@ -774,23 +955,6 @@ final class ExpeditionScreenAnalyzer {
         return false;
     }
 
-    private static boolean brightNeutral(int color) {
-        int red = Color.red(color);
-        int green = Color.green(color);
-        int blue = Color.blue(color);
-        int minimum = Math.min(red, Math.min(green, blue));
-        int maximum = Math.max(red, Math.max(green, blue));
-        return minimum >= 145 && maximum >= 205 && maximum - minimum <= 95;
-    }
-
-    private static boolean darkTeal(int color) {
-        int red = Color.red(color);
-        int green = Color.green(color);
-        int blue = Color.blue(color);
-        return red <= 145 && green >= 25 && green < 216 && blue >= 25 && blue < 216
-                && green >= red + 3 && blue >= red - 5;
-    }
-
     private static boolean neutralDarkControl(int color) {
         int red = (color >>> 16) & 0xff;
         int green = (color >>> 8) & 0xff;
@@ -816,10 +980,6 @@ final class ExpeditionScreenAnalyzer {
                 && blue >= 10 && blue <= 120
                 && red >= green + 12
                 && green >= blue + 8;
-    }
-
-    private static boolean inside(int x, int y, int width, int height) {
-        return x >= 0 && x < width && y >= 0 && y < height;
     }
 
     private ExpeditionScreenAnalyzer() {}

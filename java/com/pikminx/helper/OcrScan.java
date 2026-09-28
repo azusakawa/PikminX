@@ -4,11 +4,11 @@ import java.util.ArrayList;
 import java.util.List;
 
 /** Shared OCR profile, coordinate transform and per-frame result. */
-final class OcrScan {
+public final class OcrScan {
     private static final int WHITE = 0xFFFFFFFF;
 
     enum ScriptMode { MULTILINGUAL, CHINESE }
-    enum RoiBasis { SCREENSHOT, TARGET_WINDOW }
+    public enum RoiBasis { SCREENSHOT, TARGET_WINDOW }
 
     record TransactionId(long runGeneration, long captureSequence, long ocrRequestSequence) {
         TransactionId {
@@ -18,11 +18,13 @@ final class OcrScan {
         }
     }
 
-    enum Profile {
+    public enum Profile {
         FULL_MULTILINGUAL(ScriptMode.MULTILINGUAL, RoiBasis.SCREENSHOT,
                 0f, 0f, 1f, 1f, 1080, 1440),
         FULL_CHINESE(ScriptMode.CHINESE, RoiBasis.SCREENSHOT,
                 0f, 0f, 1f, 1f, 1080, 1440),
+        TARGETED_CHINESE(ScriptMode.CHINESE, RoiBasis.TARGET_WINDOW,
+                0f, 0f, 1f, 1f, 320, 1280),
         DISPATCH_LIST(ScriptMode.CHINESE, RoiBasis.TARGET_WINDOW,
                 0f, 0.18f, 1f, 0.90f, 1440, 2160),
         PLANTING_SEARCH_RESULTS(ScriptMode.CHINESE, RoiBasis.TARGET_WINDOW,
@@ -66,7 +68,7 @@ final class OcrScan {
         int get(int x, int y);
     }
 
-    record Transform(
+    public record Transform(
             int sourceWidth,
             int sourceHeight,
             int cropLeft,
@@ -84,11 +86,11 @@ final class OcrScan {
             String fallbackReason,
             long captureSequence) {
 
-        static Transform create(Profile profile, int sourceWidth, int sourceHeight) {
+        public static Transform create(Profile profile, int sourceWidth, int sourceHeight) {
             return create(profile, sourceWidth, sourceHeight, null);
         }
 
-        static Transform create(
+        public static Transform create(
                 Profile profile,
                 int sourceWidth,
                 int sourceHeight,
@@ -152,6 +154,32 @@ final class OcrScan {
                     captureGeometry == null ? 0L : captureGeometry.captureSequence());
         }
 
+        /** A current-frame ROI, with no clamping or fallback that could hide invalid geometry. */
+        static Transform forRegion(Profile profile, CaptureGeometry geometry,
+                ScreenCoordinateTransform.ScreenshotRect region) {
+            if (profile == null || geometry == null || region == null) {
+                throw new IllegalArgumentException("ROI profile, capture geometry and bounds are required");
+            }
+            ScreenCoordinateTransform.ScreenshotRect basis =
+                    ScreenCoordinateTransform.targetWindowInScreenshot(geometry);
+            if (basis == null || region.left() < basis.left() || region.top() < basis.top()
+                    || region.right() > basis.right() || region.bottom() > basis.bottom()
+                    || region.width() <= 0 || region.height() <= 0) {
+                throw new IllegalArgumentException("OCR ROI is outside its captured game window");
+            }
+            int analysisWidth = profile.minimumAnalysisWidth == 0 ? region.width()
+                    : clamp(region.width(), profile.minimumAnalysisWidth, profile.maximumAnalysisWidth);
+            double scale = Math.min(analysisWidth / (double) region.width(),
+                    profile.maximumAnalysisWidth / (double) region.height());
+            analysisWidth = Math.max(1, (int) Math.round(region.width() * scale));
+            int analysisHeight = Math.max(1, (int) Math.round(region.height() * scale));
+            return new Transform(geometry.bitmapWidth(), geometry.bitmapHeight(),
+                    region.left(), region.top(), region.width(), region.height(),
+                    analysisWidth, analysisHeight, RoiBasis.TARGET_WINDOW,
+                    basis.left(), basis.top(), basis.right(), basis.bottom(), false, "",
+                    geometry.captureSequence());
+        }
+
         boolean usesSourceBitmap() {
             return cropLeft == 0
                     && cropTop == 0
@@ -213,8 +241,9 @@ final class OcrScan {
         }
     }
 
-    record Frame(
+    public record Frame(
             TransactionId transactionId,
+            long admissionEpoch,
             Profile profile,
             Transform transform,
             List<PetalMatcher.Token> tokens,
@@ -223,9 +252,25 @@ final class OcrScan {
             CaptureGeometry captureGeometry,
             boolean complete) {
 
-        Frame {
+        Frame(
+                TransactionId transactionId,
+                Profile profile,
+                Transform transform,
+                List<PetalMatcher.Token> tokens,
+                long elapsedMillis,
+                PixelReader analysisPixels,
+                CaptureGeometry captureGeometry,
+                boolean complete) {
+            this(transactionId, 0L, profile, transform, tokens, elapsedMillis,
+                    analysisPixels, captureGeometry, complete);
+        }
+
+        public Frame {
             tokens = List.copyOf(tokens);
-            if (transactionId == null || captureGeometry == null || transform == null) {
+            if (transactionId == null
+                    || captureGeometry == null
+                    || transform == null
+                    || admissionEpoch < 0L) {
                 throw new IllegalArgumentException("Frame identity, transform and geometry are required");
             }
         }

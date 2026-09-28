@@ -1,7 +1,7 @@
 package com.pikminx.helper;
 
 /** 進入皮克敏選擇頁後的選取方法。 */
-enum DispatchSelectionMethod {
+public enum DispatchSelectionMethod {
     AUTO,
     DRAG_12;
 
@@ -9,7 +9,7 @@ enum DispatchSelectionMethod {
         return this == DRAG_12;
     }
 
-    static DispatchSelectionMethod fromStored(String value) {
+    public static DispatchSelectionMethod fromStored(String value) {
         if (value == null) {
             return AUTO;
         }

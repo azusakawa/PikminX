@@ -77,6 +77,18 @@ final class FeedScreenAnalyzer {
         return !panelOpen && !detailOpen && nectarCount != null;
     }
 
+    /** 面板收合後，只有目標精華庫存仍顯示在餵食頁才可開始餵食。 */
+    static boolean isSelectedNectarConfirmed(
+            boolean panelOpen,
+            boolean detailOpen,
+            Integer expectedNectarCount,
+            Integer currentNectarCount) {
+        return !panelOpen
+                && !detailOpen
+                && expectedNectarCount != null
+                && expectedNectarCount.equals(currentNectarCount);
+    }
+
     static Integer currentNectarCount(
             List<PetalMatcher.Token> tokens, int width, int height) {
         PetalMatcher.Token best = null;
@@ -213,11 +225,21 @@ final class FeedScreenAnalyzer {
                 : new FeedRoundStatistics(consumed, Math.max(0, petalsObserved));
     }
 
+    static boolean isNectarPanelOpen(
+            List<PetalMatcher.Token> tokens, int width, int height, PixelReader pixelAt) {
+        return !isPikminDetailOpen(tokens)
+                && isNectarPanelVisualOpen(width, height, pixelAt);
+    }
+
     static boolean isNectarPanelOpen(int width, int height, PixelReader pixelAt) {
+        return isNectarPanelVisualOpen(width, height, pixelAt);
+    }
+
+    static boolean isNectarPanelVisualOpen(int width, int height, PixelReader pixelAt) {
         int light = 0;
         int total = 0;
         for (int row = 0; row < 5; row++) {
-            int y = Math.round(height * (0.12f + row * 0.025f));
+            int y = Math.round(height * (0.50f + row * 0.025f));
             for (int column = 0; column < 9; column++) {
                 int x = Math.round(width * (0.10f + column * 0.10f));
                 int color = pixelAt.get(x, y);
@@ -284,6 +306,61 @@ final class FeedScreenAnalyzer {
                 height);
     }
 
+    /**
+     * Keeps basic-nectar card geometry available when the label OCR is missing.
+     * The caller must still confirm the returned card with its canonical template.
+     */
+    static List<NectarSelection> findVisibleNectarCandidates(
+            List<PetalMatcher.Token> tokens, String target, int width, int height) {
+        String canonical = PetalCatalog.canonicalName(target);
+        if (tokens == null || canonical == null || !canonical.endsWith("花瓣")
+                || width <= 0 || height <= 0) {
+            return List.of();
+        }
+        List<NectarSelection> candidates = new ArrayList<>();
+        for (PetalMatcher.Token nectarToken : tokens) {
+            Integer nectarCount = cardNumber(nectarToken.text());
+            if (nectarCount == null
+                    || nectarToken.centerY() < height * 0.35f
+                    || nectarToken.centerY() > height * 0.90f) {
+                continue;
+            }
+            float x = nectarToken.centerX() / (float) width;
+            float y = nectarToken.centerY() / (float) height;
+            PetalMatcher.Token petalToken = nearestNumberInRegion(
+                    tokens,
+                    width,
+                    height,
+                    Math.max(0f, x - 0.09f),
+                    Math.min(1f, x + 0.09f),
+                    Math.max(0f, y - 0.20f),
+                    Math.max(0f, y - 0.04f),
+                    x,
+                    y - 0.08f,
+                    FeedScreenAnalyzer::number);
+            Integer petalCount = petalToken == null ? null : number(petalToken.text());
+            if (petalCount == null) {
+                continue;
+            }
+            int tapY = Math.round(petalToken.centerY()
+                    + (nectarToken.centerY() - petalToken.centerY()) * 0.60f);
+            candidates.add(new NectarSelection(
+                    nectarDisplayName(target),
+                    nectarCount,
+                    petalCount,
+                    nectarToken.centerX(),
+                    nectarToken.centerY(),
+                    tapY));
+        }
+        if (candidates.isEmpty()) {
+            return List.of();
+        }
+        int firstRowY = candidates.stream().mapToInt(NectarSelection::y).min().orElse(0);
+        candidates.removeIf(candidate -> candidate.y() > firstRowY + Math.round(height * 0.05f));
+        candidates.sort(java.util.Comparator.comparingInt(NectarSelection::x));
+        return List.copyOf(candidates);
+    }
+
     /** 搜尋完成後：主色使用左上第一張；活動精華誤識時只接受唯一可見結果。 */
     static NectarSelection findSearchedNectar(
             List<PetalMatcher.Token> tokens, String target, int width, int height) {
@@ -336,13 +413,13 @@ final class FeedScreenAnalyzer {
         }
         PetalMatcher.Token nectarToken = nearestNumberInRegion(
                 tokens, width, height,
-                0.04f, 0.31f, 0.32f, 0.43f,
-                0.16f, 0.36f,
+                0.04f, 0.31f, 0.52f, 0.62f,
+                0.16f, 0.57f,
                 FeedScreenAnalyzer::cardNumber);
         PetalMatcher.Token petalToken = nearestNumberInRegion(
                 tokens, width, height,
-                0.04f, 0.31f, 0.22f, 0.31f,
-                0.16f, 0.27f,
+                0.04f, 0.31f, 0.63f, 0.72f,
+                0.16f, 0.67f,
                 FeedScreenAnalyzer::number);
         Integer nectarCount = nectarToken == null ? null : cardNumber(nectarToken.text());
         Integer petalCount = petalToken == null ? null : number(petalToken.text());
@@ -361,11 +438,56 @@ final class FeedScreenAnalyzer {
                         nectarCount,
                         petalCount,
                         Math.round(width * 0.16f),
-                        Math.round(height * 0.39f),
-                        Math.round(height * 0.32f)),
+                        Math.round(height * 0.57f),
+                        Math.round(height * 0.62f)),
                 "matched",
                 true,
                 true);
+    }
+
+    /** 已開啟的精華清單只接受目前目標的名稱、同卡數量與實際卡片幾何。 */
+    static NectarSearchAnalysis analyzeVisibleNectarList(
+            List<PetalMatcher.Token> tokens,
+            String target,
+            int width,
+            int height,
+            PixelReader pixelAt) {
+        if (isPikminDetailOpen(tokens)) {
+            return new NectarSearchAnalysis(null, "detail-open", false, false);
+        }
+        if (!isNectarPanelVisualOpen(width, height, pixelAt)) {
+            return new NectarSearchAnalysis(null, "panel-not-visible", false, false);
+        }
+        NectarSelection selection = findNectar(tokens, target, width, height);
+        return new NectarSearchAnalysis(
+                selection,
+                selection == null ? "visible-target-missing" : "matched",
+                selection != null,
+                selection != null);
+    }
+
+    static String searchedNectarNumberLocations(
+            List<PetalMatcher.Token> tokens, int width, int height) {
+        StringBuilder locations = new StringBuilder();
+        for (PetalMatcher.Token token : tokens) {
+            Integer value = number(token.text());
+            if (value == null
+                    || token.centerX() < width * 0.04f
+                    || token.centerX() > width * 0.31f
+                    || token.centerY() < height * 0.45f
+                    || token.centerY() > height * 0.90f) {
+                continue;
+            }
+            if (locations.length() > 0) {
+                locations.append(',');
+            }
+            locations.append(value)
+                    .append('@')
+                    .append(Math.round(token.centerX() * 100f / width))
+                    .append(',')
+                    .append(Math.round(token.centerY() * 100f / height));
+        }
+        return locations.toString();
     }
 
     private static PetalMatcher.Token nearestNumberInRegion(
@@ -532,6 +654,115 @@ final class FeedScreenAnalyzer {
             }
         }
         return List.copyOf(targets);
+    }
+
+    /** Finds an already-bloomed target from one fresh Care frame. */
+    static BloomTarget findExistingBloomTarget(
+            String target, int width, int height, PixelReader pixelAt) {
+        PostcardPotCatalog.Color color = PostcardPotCatalog.colorOf(target);
+        if (color == null || width <= 0 || height <= 0 || pixelAt == null) {
+            return null;
+        }
+        int columns = 48;
+        int rows = 64;
+        int left = Math.round(width * 0.10f);
+        int right = Math.round(width * 0.90f);
+        int top = Math.round(height * 0.20f);
+        int bottom = Math.round(height * 0.64f);
+        boolean[] active = new boolean[columns * rows];
+        int cellWidth = Math.max(1, (right - left) / columns);
+        int cellHeight = Math.max(1, (bottom - top) / rows);
+        for (int row = 0; row < rows; row++) {
+            for (int column = 0; column < columns; column++) {
+                int centerX = left + Math.round((column + 0.5f) * (right - left) / columns);
+                int centerY = top + Math.round((row + 0.5f) * (bottom - top) / rows);
+                boolean flower = false;
+                for (int sampleY = -1; sampleY <= 1 && !flower; sampleY++) {
+                    for (int sampleX = -1; sampleX <= 1; sampleX++) {
+                        int x = Math.max(0, Math.min(width - 1,
+                                centerX + sampleX * cellWidth / 3));
+                        int y = Math.max(0, Math.min(height - 1,
+                                centerY + sampleY * cellHeight / 3));
+                        if (isExistingFlowerPixel(color, pixelAt.get(x, y))) {
+                            flower = true;
+                            break;
+                        }
+                    }
+                }
+                active[row * columns + column] = flower;
+            }
+        }
+
+        boolean[] visited = new boolean[active.length];
+        int bestArea = 0;
+        long bestX = 0L;
+        long bestY = 0L;
+        for (int row = 0; row < rows; row++) {
+            for (int column = 0; column < columns; column++) {
+                int start = row * columns + column;
+                if (!active[start] || visited[start]) {
+                    continue;
+                }
+                java.util.ArrayDeque<Integer> pending = new java.util.ArrayDeque<>();
+                pending.add(start);
+                visited[start] = true;
+                int area = 0;
+                long sumX = 0L;
+                long sumY = 0L;
+                while (!pending.isEmpty()) {
+                    int index = pending.removeFirst();
+                    int currentRow = index / columns;
+                    int currentColumn = index % columns;
+                    area++;
+                    sumX += left + Math.round((currentColumn + 0.5f)
+                            * (right - left) / columns);
+                    sumY += top + Math.round((currentRow + 0.5f)
+                            * (bottom - top) / rows);
+                    for (int deltaY = -1; deltaY <= 1; deltaY++) {
+                        for (int deltaX = -1; deltaX <= 1; deltaX++) {
+                            int nextRow = currentRow + deltaY;
+                            int nextColumn = currentColumn + deltaX;
+                            if (nextRow < 0 || nextRow >= rows
+                                    || nextColumn < 0 || nextColumn >= columns) {
+                                continue;
+                            }
+                            int next = nextRow * columns + nextColumn;
+                            if (active[next] && !visited[next]) {
+                                visited[next] = true;
+                                pending.add(next);
+                            }
+                        }
+                    }
+                }
+                if (area > bestArea) {
+                    bestArea = area;
+                    bestX = sumX;
+                    bestY = sumY;
+                }
+            }
+        }
+        return bestArea < 4
+                ? null
+                : new BloomTarget(
+                        Math.round(bestX / (float) bestArea),
+                        Math.round(bestY / (float) bestArea),
+                        bestArea);
+    }
+
+    private static boolean isExistingFlowerPixel(
+            PostcardPotCatalog.Color color, int pixel) {
+        int red = (pixel >> 16) & 0xff;
+        int green = (pixel >> 8) & 0xff;
+        int blue = pixel & 0xff;
+        int maximum = Math.max(red, Math.max(green, blue));
+        int minimum = Math.min(red, Math.min(green, blue));
+        return switch (color) {
+            case WHITE -> maximum >= 185 && maximum - minimum <= 55;
+            case YELLOW -> red >= 170 && green >= 145 && blue <= 170
+                    && red - blue >= 35 && green - blue >= 20;
+            case RED -> red >= 160 && red - green >= 35 && red - blue >= 35;
+            case BLUE -> blue >= 140 && blue - red >= 20 && blue - green >= 10;
+        };
     }
 
     static boolean isSameBloomTarget(

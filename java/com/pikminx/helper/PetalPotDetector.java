@@ -52,6 +52,55 @@ final class PetalPotDetector {
     }
 
     /**
+     * Equivalent to {@link #find} when the OCR name key has already been computed once for
+     * every token in the current frame.
+     */
+    static Match findWithKeys(
+            List<PetalMatcher.Token> tokens,
+            List<String> tokenKeys,
+            String targetKey,
+            int minimumCount,
+            int width,
+            int height,
+            float minimumLabelY,
+            float maximumLabelY,
+            float maximumCountXDistance,
+            float maximumCountYDistance) {
+        if (tokens == null || tokenKeys == null || tokens.size() != tokenKeys.size()
+                || targetKey == null || targetKey.isBlank()) {
+            return null;
+        }
+        Match best = null;
+        for (int index = 0; index < tokens.size(); index++) {
+            PetalMatcher.Token token = tokens.get(index);
+            if (!isExactLabel(
+                    token,
+                    tokenKeys.get(index),
+                    targetKey,
+                    width,
+                    height,
+                    minimumLabelY,
+                    maximumLabelY)) {
+                continue;
+            }
+            Match match = matchCount(
+                    tokens,
+                    token,
+                    minimumCount,
+                    width,
+                    height,
+                    maximumCountXDistance,
+                    maximumCountYDistance);
+            if (match != null && (best == null
+                    || match.labelY() < best.labelY()
+                    || (match.labelY() == best.labelY() && match.x() < best.x()))) {
+                best = match;
+            }
+        }
+        return best;
+    }
+
+    /**
      * 搜尋框已由呼叫端確認時，只依完整單列的幾何位置與最近數量找唯一結果。
      * 花名內容不參與比對，避免不同裝置的 OCR 字形誤識令正確結果失效。
      */
@@ -91,6 +140,22 @@ final class PetalPotDetector {
             float maximumLabelY,
             Function<String, String> nameKey) {
         String tokenKey = nameKey.apply(token.text());
+        return tokenKey != null
+                && tokenKey.equals(targetKey)
+                && token.centerX() > width * 0.03f
+                && token.centerX() < width * 0.97f
+                && token.centerY() > height * minimumLabelY
+                && token.centerY() < height * maximumLabelY;
+    }
+
+    private static boolean isExactLabel(
+            PetalMatcher.Token token,
+            String tokenKey,
+            String targetKey,
+            int width,
+            int height,
+            float minimumLabelY,
+            float maximumLabelY) {
         return tokenKey != null
                 && tokenKey.equals(targetKey)
                 && token.centerX() > width * 0.03f

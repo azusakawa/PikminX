@@ -3,7 +3,7 @@ package com.pikminx.helper;
 /**
  *  派遣頁面順序的純狀態機。
  *
- * <p>畫面辨識與手勢由服務提供；此類別只負責兩幀確認、逾時、完成次數與
+ * <p>畫面辨識與手勢由服務提供；此類別負責完整掃描、略過結果、兩幀確認與
  * 不允許跳頁的轉移，避免舊 OCR 回呼在錯誤頁面補點。</p>
  */
 final class ExpeditionDispatchSession {
@@ -21,43 +21,47 @@ final class ExpeditionDispatchSession {
         STAGE_TIMEOUT
     }
 
-    enum ListScanDecision {
-        WAIT,
-        SCROLL,
-        AT_LIST_START
-    }
-
-    enum BottomSettleDecision {
-        SWIPE_UP,
-        READY,
-        FAILED
-    }
+    enum CandidateRetry { WAIT, REACQUIRE, QUARANTINED }
+    enum Outcome { RUNNING, COMPLETE, COMPLETE_WITH_SKIPS, ABORTED }
+    enum ListDecision { WAIT, EXPAND, SCROLL_UP, SCAN, COMPLETE, ABORT }
 
     private static final long STAGE_TIMEOUT_MILLIS = 24_000L;
     private static final int REQUIRED_DESTINATION_FRAMES = 2;
     private static final long DETAIL_TAP_RETRY_DELAY_MILLIS = 3_500L;
     private static final int MAX_DETAIL_TAP_ATTEMPTS = 2;
 
-    private final int targetCount;
+    private Outcome outcome = Outcome.RUNNING;
+    private boolean normalizing = true;
+    private boolean awaitingScroll;
+    private long scrollBaseline;
+    private boolean scrollStartedAtBottom;
+    private int missingBottomFrames;
+    private long lastListCapture = -1;
+    private int repeatedViewportFrames;
+    private int scrollbarSettleFrames;
+    private static final int SCROLLBAR_SETTLE_FRAMES = 6;
+    private int listScrolls;
+    private int skippedCount;
+    private final java.util.Set<String> quarantine = new java.util.HashSet<>();
+    private String selectingCandidate = "";
+    private long candidateFirstAttempt;
+    private long candidateLastAttempt;
+    private long viewportEpoch;
+    private static final int EMERGENCY_SCROLL_LIMIT = 128;
     private Stage stage = Stage.LIST_SEARCH;
     private long stageStartedAt;
     private String pendingKey = "";
     private int matchingFrames;
     private int completedCount;
-    private int listMissFrames;
-    private static final int MAX_BOTTOM_SETTLE_SWIPES = 4;
-    private int bottomSwipeAttempts;
-    private boolean bottomSettled;
     private boolean transitionPending;
+    private long completedGoCapture = -1;
     private ExpeditionScreenAnalyzer.Screen pendingDestinationScreen =
             ExpeditionScreenAnalyzer.Screen.UNKNOWN;
     private int matchingDestinationFrames;
-    private boolean postReturnRevealPending;
     private int detailTapAttempts;
     private long detailTapAt;
 
-    ExpeditionDispatchSession(int targetCount, long nowMillis) {
-        this.targetCount = Math.max(1, Math.min(99, targetCount));
+    ExpeditionDispatchSession(long nowMillis) {
         stageStartedAt = nowMillis;
     }
 
@@ -69,53 +73,147 @@ final class ExpeditionDispatchSession {
         return completedCount;
     }
 
-    int targetCount() {
-        return targetCount;
+    Outcome outcome() { return outcome; }
+    int skippedCount() { return skippedCount; }
+    long viewportEpoch() { return viewportEpoch; }
+    boolean normalizing() { return normalizing; }
+    boolean complete() { return outcome == Outcome.COMPLETE || outcome == Outcome.COMPLETE_WITH_SKIPS; }
+
+    /** Only fresh frames after an admitted completed scroll can establish a repeated viewport. */
+    ListDecision observeList(long capture, long signature, boolean expanded, boolean topVisible, boolean bottomVisible, boolean actionableVisible, long nowMillis) {
+        return observeList(capture, signature, expanded, true,
+                topVisible, bottomVisible, actionableVisible, nowMillis);
     }
 
-    boolean complete() {
-        return completedCount >= targetCount;
+    ListDecision observeList(long capture, long signature, boolean expanded,
+            boolean scrollbarVisible, boolean topVisible, boolean bottomVisible,
+            boolean actionableVisible, long nowMillis) {
+        if (outcome == Outcome.ABORTED) return ListDecision.ABORT;
+        if (complete()) return ListDecision.COMPLETE;
+        if (capture <= lastListCapture) return ListDecision.WAIT;
+        lastListCapture = capture;
+        if (timedOut(nowMillis) || listScrolls >= EMERGENCY_SCROLL_LIMIT) {
+            abort(); return ListDecision.ABORT;
+        }
+        if (!expanded) return ListDecision.EXPAND;
+        if (awaitingScroll && listScrolls > 0 && !scrollbarVisible) {
+            // The game temporarily hides its scrollbar after a large pull. Wait for
+            // the bounce to settle before deciding whether content actually moved.
+            scrollbarSettleFrames++;
+            if (signature == scrollBaseline) {
+                if (++repeatedViewportFrames >= 2) {
+                    awaitingScroll = false;
+                    repeatedViewportFrames = 0;
+                    scrollbarSettleFrames = 0;
+                    if (normalizing) {
+                        normalizing = false;
+                        viewportEpoch++;
+                        recordProgress(nowMillis);
+                        return ListDecision.SCAN;
+                    }
+                    outcome = skippedCount == 0
+                            ? Outcome.COMPLETE : Outcome.COMPLETE_WITH_SKIPS;
+                    return ListDecision.COMPLETE;
+                }
+            } else {
+                repeatedViewportFrames = 0;
+            }
+            if (scrollbarSettleFrames <= SCROLLBAR_SETTLE_FRAMES) return ListDecision.WAIT;
+            scrollbarSettleFrames = 0;
+        } else {
+            scrollbarSettleFrames = 0;
+        }
+        if (normalizing && topVisible) {
+            normalizing = false; awaitingScroll = false; repeatedViewportFrames = 0;
+            viewportEpoch++; recordProgress(nowMillis);
+            return ListDecision.SCAN;
+        }
+        if (awaitingScroll) {
+            if (!normalizing && actionableVisible) {
+                awaitingScroll = false; repeatedViewportFrames = 0;
+                viewportEpoch++; recordProgress(nowMillis); return ListDecision.SCAN;
+            }
+            // A completed gesture can still leave one capture in the game's edge bounce.
+            // Require consecutive missing-end evidence before abandoning a confirmed bottom.
+            if (!normalizing && scrollStartedAtBottom && !bottomVisible && signature != scrollBaseline) {
+                repeatedViewportFrames = 0;
+                if (++missingBottomFrames < 2) return ListDecision.WAIT;
+            } else {
+                missingBottomFrames = 0;
+            }
+            if (signature == scrollBaseline || !normalizing && scrollStartedAtBottom && bottomVisible) {
+                if (++repeatedViewportFrames < 2) return ListDecision.WAIT;
+                awaitingScroll = false; repeatedViewportFrames = 0;
+                if (normalizing) {
+                    normalizing = false; viewportEpoch++; recordProgress(nowMillis);
+                    return ListDecision.SCAN;
+                }
+                outcome = skippedCount == 0 ? Outcome.COMPLETE : Outcome.COMPLETE_WITH_SKIPS;
+                return ListDecision.COMPLETE;
+            }
+            awaitingScroll = false; repeatedViewportFrames = 0;
+            viewportEpoch++; recordProgress(nowMillis);
+        }
+        return normalizing ? ListDecision.SCROLL_UP : ListDecision.SCAN;
     }
 
-    BottomSettleDecision observeListForBottom(
-            boolean panelExpanded,
-            long nowMillis) {
-        if (postReturnRevealPending) {
-            postReturnRevealPending = false;
-            stageStartedAt = nowMillis;
-            return BottomSettleDecision.SWIPE_UP;
-        }
-        if (bottomSettled) {
-            return BottomSettleDecision.READY;
-        }
-        if (panelExpanded) {
-            bottomSettled = true;
-            listMissFrames = 0;
-            return BottomSettleDecision.READY;
-        }
-        if (bottomSwipeAttempts >= MAX_BOTTOM_SETTLE_SWIPES) {
-            return BottomSettleDecision.FAILED;
-        }
-        bottomSwipeAttempts++;
-        stageStartedAt = nowMillis;
-        return BottomSettleDecision.SWIPE_UP;
+    /** Called only by the current run's successful gesture callback, never on a rejected action. */
+    void recordListScroll(long signature, boolean atBottom) {
+        if (stage != Stage.LIST_SEARCH || outcome != Outcome.RUNNING) return;
+        awaitingScroll = true; scrollBaseline = signature; scrollStartedAtBottom = atBottom; repeatedViewportFrames = 0; missingBottomFrames = 0;
+        listScrolls++;
     }
 
-    ListScanDecision recordListMiss(boolean listStartVisible, long nowMillis) {
-        if (++listMissFrames < 2) {
-            return ListScanDecision.WAIT;
-        }
-        listMissFrames = 0;
-        if (listStartVisible) {
-            return ListScanDecision.AT_LIST_START;
-        }
-        stageStartedAt = nowMillis;
-        return ListScanDecision.SCROLL;
+    /** Return-to-list uses one observed upward reveal before the next candidate scan. */
+    void recordReturnRevealScroll(long nowMillis) {
+        if (stage != Stage.LIST_SEARCH || outcome != Outcome.RUNNING) return;
+        // The user-observed reveal gesture runs first. Then normalize to the list
+        // top so targets above the returned viewport cannot be skipped.
+        normalizing = true;
+        awaitingScroll = false;
+        scrollStartedAtBottom = false;
+        repeatedViewportFrames = 0;
+        missingBottomFrames = 0;
+        scrollbarSettleFrames = 0;
+        viewportEpoch++;
+        recordProgress(nowMillis);
     }
 
-    void recordListTargetFound() {
-        listMissFrames = 0;
+    void recordSkippedCandidate(long nowMillis) {
+        skippedCount++;
+        recordProgress(nowMillis);
     }
+
+    boolean isQuarantined(String fingerprint) { return quarantine.contains(fingerprint); }
+
+    boolean beginCandidateSelection(String fingerprint, long nowMillis) {
+        if (outcome != Outcome.RUNNING || stage != Stage.LIST_SEARCH || fingerprint == null || fingerprint.isEmpty()
+                || isQuarantined(fingerprint)) return false;
+        if (!fingerprint.equals(selectingCandidate)) {
+            selectingCandidate = fingerprint; candidateFirstAttempt = nowMillis;
+        }
+        candidateLastAttempt = nowMillis;
+        beginTransition(nowMillis);
+        return true;
+    }
+
+    /** A fresh confirmed LIST frame permits reacquisition, never reuse of the old tap bounds. */
+    CandidateRetry candidateStillOnList(long nowMillis) {
+        if (stage != Stage.LIST_SEARCH || !transitionPending || selectingCandidate.isEmpty())
+            return CandidateRetry.WAIT;
+        if (nowMillis - candidateFirstAttempt >= STAGE_TIMEOUT_MILLIS) {
+            quarantine.add(selectingCandidate);
+            transitionPending = false; selectingCandidate = ""; resetDestinationEvidence();
+            recordSkippedCandidate(nowMillis);
+            return CandidateRetry.QUARANTINED;
+        }
+        if (nowMillis - candidateLastAttempt < DETAIL_TAP_RETRY_DELAY_MILLIS) return CandidateRetry.WAIT;
+        transitionPending = false; resetDestinationEvidence();
+        return CandidateRetry.REACQUIRE;
+    }
+
+    void abort() { outcome = Outcome.ABORTED; }
+    boolean timedOut(long nowMillis) { return nowMillis - stageStartedAt >= STAGE_TIMEOUT_MILLIS; }
 
     boolean transitionPending() {
         return transitionPending;
@@ -170,8 +268,16 @@ final class ExpeditionDispatchSession {
         return confirm(key, nowMillis, 2);
     }
 
+    /**
+     * The detail-page action is already gated by the verified detail screen and final
+     * ActionAdmission, so the first valid OCR hit may drive the tap immediately.
+     */
+    Confirmation confirmDetailAction(String key, long nowMillis) {
+        return confirm(key, nowMillis, 1);
+    }
+
     Confirmation confirm(String key, long nowMillis, int requiredFrames) {
-        if (nowMillis - stageStartedAt >= STAGE_TIMEOUT_MILLIS) {
+        if (timedOut(nowMillis)) {
             return Confirmation.STAGE_TIMEOUT;
         }
         String safeKey = key == null ? "" : key;
@@ -191,16 +297,17 @@ final class ExpeditionDispatchSession {
     }
 
     boolean advance(Stage expected, Stage next, long nowMillis) {
-        if (stage != expected || !allowed(expected, next)) {
+        if (outcome != Outcome.RUNNING || stage != expected || !allowed(expected, next)) {
             return false;
         }
         stage = next;
+        if (next == Stage.SELECTION) completedGoCapture = -1;
         stageStartedAt = nowMillis;
         pendingKey = "";
         matchingFrames = 0;
         transitionPending = false;
         resetDestinationEvidence();
-        resetListScan();
+        if (next == Stage.DETAIL) selectingCandidate = "";
         if (next == Stage.DETAIL || expected == Stage.DETAIL) {
             resetDetailTap();
         }
@@ -208,9 +315,9 @@ final class ExpeditionDispatchSession {
     }
 
     private void resetListScan() {
-        listMissFrames = 0;
-        bottomSwipeAttempts = 0;
-        bottomSettled = false;
+        normalizing = true; awaitingScroll = false; repeatedViewportFrames = 0;
+        scrollbarSettleFrames = 0; listScrolls = 0;
+        lastListCapture = -1; viewportEpoch++;
     }
 
     private void resetDetailTap() {
@@ -219,6 +326,17 @@ final class ExpeditionDispatchSession {
     }
 
     /** 手勢成功只代表 Android 接受輸入；看到目的頁後才推進派遣階段。 */
+    void recordGoGestureCompleted(long sourceCapture) {
+        if (outcome == Outcome.RUNNING && stage == Stage.SELECTION && transitionPending)
+            completedGoCapture = sourceCapture;
+    }
+
+    boolean observePostGo(boolean greenCloseVisible, long capture, long nowMillis) {
+        return stage == Stage.SELECTION && transitionPending && completedGoCapture > 0
+                && capture > completedGoCapture && greenCloseVisible
+                && advance(Stage.SELECTION, Stage.WAIT_RESULT, nowMillis);
+    }
+
     boolean advanceForVerifiedScreen(
             ExpeditionScreenAnalyzer.Screen screen, long nowMillis) {
         Stage next = switch (stage) {
@@ -226,8 +344,7 @@ final class ExpeditionDispatchSession {
                     ? Stage.DETAIL : null;
             case DETAIL -> screen == ExpeditionScreenAnalyzer.Screen.PIKMIN_SELECTION
                     ? Stage.SELECTION : null;
-            case SELECTION -> screen == ExpeditionScreenAnalyzer.Screen.RESULT
-                    ? Stage.WAIT_RESULT : null;
+            case SELECTION -> null; // Only fresh post-GO green-close evidence can advance.
             case WAIT_RESULT -> screen == ExpeditionScreenAnalyzer.Screen.EXPLORE_LIST
                     ? Stage.VERIFY_RETURN : null;
             case VERIFY_RETURN -> null;
@@ -258,7 +375,6 @@ final class ExpeditionDispatchSession {
         transitionPending = false;
         resetDestinationEvidence();
         resetListScan();
-        postReturnRevealPending = true;
         return true;
     }
 

@@ -22,23 +22,117 @@ final class CardHighlight {
 
     record PlantingMenuControls(Point startControl, Point stopControl) {}
 
+    /**
+     * Lazily computes all petal-search controls from one bitmap frame. The
+     * analysis object is intentionally short-lived and must not be shared
+     * between screenshots.
+     */
+    static final class PetalSearchAnalysis {
+        private final int width;
+        private final int height;
+        private final IntBinaryOperator pixelAt;
+        private final int selectorY;
+        private boolean searchButtonComputed;
+        private Point searchButton;
+        private boolean plantingSearchButtonComputed;
+        private Point plantingSearchButton;
+        private boolean closeButtonComputed;
+        private Point closeButton;
+
+        private PetalSearchAnalysis(
+                int width, int height, IntBinaryOperator pixelAt, int selectorY) {
+            this.width = width;
+            this.height = height;
+            this.pixelAt = pixelAt;
+            this.selectorY = selectorY;
+        }
+
+        Point searchButton() {
+            if (!searchButtonComputed) {
+                searchButtonComputed = true;
+                if (selectorY >= 0) {
+                    int tolerance = Math.max(8, Math.round(height * 0.025f));
+                    searchButton = findNeutralDarkControl(
+                            width,
+                            height,
+                            0.91f,
+                            selectorY - tolerance,
+                            selectorY + tolerance,
+                            pixelAt);
+                }
+            }
+            return searchButton;
+        }
+
+        Point plantingSearchButton() {
+            if (!plantingSearchButtonComputed) {
+                plantingSearchButtonComputed = true;
+                if (selectorY >= 0) {
+                    int minimumColorPixels = Math.max(5, width / 100);
+                    int blueX = colorCenterAt(
+                            selectorY,
+                            width,
+                            0.27f,
+                            0.38f,
+                            minimumColorPixels,
+                            CardHighlight::isPetalBlue,
+                            pixelAt);
+                    if (blueX >= 0) {
+                        int tolerance = Math.max(8, Math.round(height * 0.025f));
+                        plantingSearchButton = findRightmostNeutralDarkControl(
+                                width,
+                                height,
+                                blueX + Math.round(width * 0.10f),
+                                Math.min(width - 1, Math.round(width * 0.98f)),
+                                selectorY - tolerance,
+                                selectorY + tolerance,
+                                pixelAt);
+                    }
+                }
+            }
+            return plantingSearchButton;
+        }
+
+        Point closeButton() {
+            if (!closeButtonComputed) {
+                closeButtonComputed = true;
+                if (selectorY >= 0) {
+                    int minimumGap = Math.max(8, Math.round(height * 0.025f));
+                    int maximumGap = Math.max(minimumGap + 1, Math.round(height * 0.09f));
+                    Point magnifier = findNeutralDarkControl(
+                            width,
+                            height,
+                            0.08f,
+                            selectorY - maximumGap,
+                            selectorY - minimumGap,
+                            pixelAt);
+                    closeButton = magnifier == null
+                            ? null
+                            : new Point(Math.round(width * 0.91f), magnifier.y());
+                }
+            }
+            return closeButton;
+        }
+
+        boolean searchOpen() {
+            return closeButton() != null;
+        }
+    }
+
+    static PetalSearchAnalysis analyzePetalSearchControls(
+            int width,
+            int height,
+            IntBinaryOperator pixelAt) {
+        return new PetalSearchAnalysis(width, height, pixelAt,
+                findPetalSelectorY(width, height, pixelAt));
+    }
+
     /** 從右側欄位找出收合狀態的花盆搜尋按鈕，不假設固定垂直座標。 */
     static Point findPetalSearchButton(
             int width,
             int height,
             IntBinaryOperator pixelAt) {
-        int selectorY = findPetalSelectorY(width, height, pixelAt);
-        if (selectorY < 0) {
-            return null;
-        }
-        int tolerance = Math.max(8, Math.round(height * 0.025f));
-        return findNeutralDarkControl(
-                width,
-                height,
-                0.91f,
-                selectorY - tolerance,
-                selectorY + tolerance,
-                pixelAt);
+        return analyzePetalSearchControls(width, height, pixelAt).searchButton();
     }
 
     /** 自動種花沿花色列水平尋找搜尋按鈕，不假設固定 X 座標。 */
@@ -46,31 +140,7 @@ final class CardHighlight {
             int width,
             int height,
             IntBinaryOperator pixelAt) {
-        int selectorY = findPetalSelectorY(width, height, pixelAt);
-        if (selectorY < 0) {
-            return null;
-        }
-        int minimumColorPixels = Math.max(5, width / 100);
-        int blueX = colorCenterAt(
-                selectorY,
-                width,
-                0.27f,
-                0.38f,
-                minimumColorPixels,
-                CardHighlight::isPetalBlue,
-                pixelAt);
-        if (blueX < 0) {
-            return null;
-        }
-        int tolerance = Math.max(8, Math.round(height * 0.025f));
-        return findRightmostNeutralDarkControl(
-                width,
-                height,
-                blueX + Math.round(width * 0.10f),
-                Math.min(width - 1, Math.round(width * 0.98f)),
-                selectorY - tolerance,
-                selectorY + tolerance,
-                pixelAt);
+        return analyzePetalSearchControls(width, height, pixelAt).plantingSearchButton();
     }
 
     /** 搜尋欄展開後，放大鏡會移到欄位左側。 */
@@ -78,7 +148,7 @@ final class CardHighlight {
             int width,
             int height,
             IntBinaryOperator pixelAt) {
-        return findPetalSearchCloseButton(width, height, pixelAt) != null;
+        return analyzePetalSearchControls(width, height, pixelAt).searchOpen();
     }
 
     /** 只以右下哨子為入口錨點，按畫面比例推算其正上方的種花入口。 */
@@ -229,22 +299,7 @@ final class CardHighlight {
             int width,
             int height,
             IntBinaryOperator pixelAt) {
-        int selectorY = findPetalSelectorY(width, height, pixelAt);
-        if (selectorY < 0) {
-            return null;
-        }
-        int minimumGap = Math.max(8, Math.round(height * 0.025f));
-        int maximumGap = Math.max(minimumGap + 1, Math.round(height * 0.09f));
-        Point magnifier = findNeutralDarkControl(
-                width,
-                height,
-                0.08f,
-                selectorY - maximumGap,
-                selectorY - minimumGap,
-                pixelAt);
-        return magnifier == null
-                ? null
-                : new Point(Math.round(width * 0.91f), magnifier.y());
+        return analyzePetalSearchControls(width, height, pixelAt).closeButton();
     }
 
     /** 以黃、紅、藍三個篩選圓點定位搜尋控制列，排除下方精華瓶及名稱文字。 */
@@ -254,7 +309,7 @@ final class CardHighlight {
             IntBinaryOperator pixelAt) {
         int minimumColorPixels = Math.max(5, width / 100);
         int startY = Math.round(height * 0.10f);
-        int endY = Math.round(height * 0.55f);
+        int endY = Math.round(height * 0.80f);
         int runStart = -1;
         int bestStart = -1;
         int bestEnd = -1;
@@ -708,18 +763,33 @@ final class CardHighlight {
         }
         int bestY = -1;
         int bestCount = 0;
-        for (int y = startY; y <= endY; y++) {
-            int count = 0;
-            for (int sampleY = y - radius; sampleY <= y + radius; sampleY++) {
-                for (int sampleX = centerX - radius; sampleX <= centerX + radius; sampleX++) {
-                    if (isNeutralDark(pixelAt.applyAsInt(sampleX, sampleY))) {
-                        count++;
-                    }
+        int windowWidth = radius * 2 + 1;
+        int firstSampleY = startY - radius;
+        int lastSampleY = endY + radius;
+        int[] darkPixelsPerRow = new int[lastSampleY - firstSampleY + 1];
+        for (int sampleY = firstSampleY; sampleY <= lastSampleY; sampleY++) {
+            int rowCount = 0;
+            for (int sampleX = centerX - radius; sampleX <= centerX + radius; sampleX++) {
+                if (isNeutralDark(pixelAt.applyAsInt(sampleX, sampleY))) {
+                    rowCount++;
                 }
             }
-            if (count > bestCount) {
-                bestCount = count;
+            darkPixelsPerRow[sampleY - firstSampleY] = rowCount;
+        }
+        int windowDarkCount = 0;
+        for (int offset = 0; offset < windowWidth; offset++) {
+            windowDarkCount += darkPixelsPerRow[offset];
+        }
+        for (int y = startY; y <= endY; y++) {
+            if (windowDarkCount > bestCount) {
+                bestCount = windowDarkCount;
                 bestY = y;
+            }
+            if (y < endY) {
+                int outgoingRow = y - radius - firstSampleY;
+                int incomingRow = y + radius + 1 - firstSampleY;
+                windowDarkCount += darkPixelsPerRow[incomingRow]
+                        - darkPixelsPerRow[outgoingRow];
             }
         }
         if (bestCount < radius * 2) {

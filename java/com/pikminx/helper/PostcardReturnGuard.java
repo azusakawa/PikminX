@@ -1,9 +1,6 @@
 package com.pikminx.helper;
 
-/**
- * Requires the previous-postcard black bubble to remain visible before the next round starts.
- * No OCR text or fallback flower probing is allowed in this transition.
- */
+/** Requires stable post-receipt map evidence before the next round starts. */
 final class PostcardReturnGuard {
     enum Decision {
         OPEN_PREVIOUS_FLOWER,
@@ -16,12 +13,12 @@ final class PostcardReturnGuard {
     private int visibleFrames;
     private int missingFrames;
 
-    Decision observe(boolean returningFromReceipt, boolean bubbleVisible) {
+    Decision observe(boolean returningFromReceipt, boolean returnEvidence) {
         if (!returningFromReceipt) {
             reset();
             return Decision.WAIT;
         }
-        if (bubbleVisible) {
+        if (returnEvidence) {
             missingFrames = 0;
             visibleFrames++;
             return visibleFrames >= REQUIRED_VISIBLE_FRAMES

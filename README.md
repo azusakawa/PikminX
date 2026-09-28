@@ -2,6 +2,8 @@
 
 > **授權聲明**：本專案為原始碼公開專案（Source-available），採用非商業使用授權。未經作者書面同意，禁止任何商業形式之使用。
 
+目前公開原始碼版本：**3.1.65（versionCode 375）**。
+
 PikminX 是一個基於 Android 無障礙服務（AccessibilityService）開發的 Pikmin Bloom 輔助工具。
 
 > **專案範圍說明**：本儲存庫僅包含應用程式核心程式碼與資源檔案，不包含完整 Android Studio 建置設定、Gradle Wrapper、測試套件或預編譯 APK。
@@ -100,4 +102,10 @@ PikminX 依賴 Android AccessibilityService 實現自動化：
 👉 [點此前往歐付寶進行小額贊助](https://payment.opay.tw/Broadcaster/Donate/0CB6EDA6EAB8577A8D33F1E8E346BC2A)
 
 [<img width="170" height="170" alt="S__318242819" src="https://github.com/user-attachments/assets/d4b00bf9-6579-4430-aabc-164f01bdd7c4" />](https://payment.opay.tw/Broadcaster/Donate/0CB6EDA6EAB8577A8D33F1E8E346BC2A)
+
+---
+
+## 第三方圖像素材
+
+運行時辨識模板的來源與權利邊界請參閱 [ASSET_PROVENANCE.md](ASSET_PROVENANCE.md) 與 [THIRD_PARTY_ARTWORK_NOTICE.md](THIRD_PARTY_ARTWORK_NOTICE.md)。
 

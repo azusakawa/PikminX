@@ -19,10 +19,13 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BooleanSupplier;
 
 /**
  * 同時使用 APK 內建的 ML Kit 文字系統模型，將文字區塊轉成自動化流程可用的 token。
@@ -50,6 +53,7 @@ final class OcrScanner implements AutoCloseable {
         private final OcrScan.TransactionId id;
         private final AtomicReference<TerminalState> state =
                 new AtomicReference<>(TerminalState.PENDING);
+        private volatile OcrRuntimeDiagnostics diagnostics;
 
         Transaction(OcrScan.TransactionId id) {
             if (id == null) {
@@ -61,11 +65,54 @@ final class OcrScanner implements AutoCloseable {
         OcrScan.TransactionId id() { return id; }
         TerminalState state() { return state.get(); }
 
+        void attachDiagnostics(OcrRuntimeDiagnostics diagnostics) {
+            if (diagnostics != null) {
+                this.diagnostics = diagnostics;
+            }
+        }
+
+        OcrRuntimeDiagnostics diagnostics() { return diagnostics; }
+
+        synchronized void onTerminal(Runnable listener) {
+            if (listener == null) {
+                throw new IllegalArgumentException("Terminal listener is required");
+            }
+            if (state.get() == TerminalState.PENDING) {
+                if (terminalListener != null) {
+                    throw new IllegalStateException("A terminal listener is already registered");
+                }
+                terminalListener = listener;
+                return;
+            }
+            runTerminalListener(listener);
+        }
+
         boolean tryFinish(TerminalState terminalState) {
             if (terminalState == null || terminalState == TerminalState.PENDING) {
                 throw new IllegalArgumentException("A terminal state is required");
             }
-            return state.compareAndSet(TerminalState.PENDING, terminalState);
+            Runnable listener;
+            synchronized (this) {
+                if (!state.compareAndSet(TerminalState.PENDING, terminalState)) {
+                    return false;
+                }
+                listener = terminalListener;
+                terminalListener = null;
+            }
+            if (listener != null) {
+                runTerminalListener(listener);
+            }
+            return true;
+        }
+
+        private Runnable terminalListener;
+
+        private static void runTerminalListener(Runnable listener) {
+            try {
+                listener.run();
+            } catch (RuntimeException ignored) {
+                // Resource cleanup must never alter transaction state delivery.
+            }
         }
     }
 
@@ -84,6 +131,12 @@ final class OcrScanner implements AutoCloseable {
 
         synchronized boolean isActive(Transaction transaction) {
             return active == transaction;
+        }
+
+        synchronized boolean acceptsCallback(Transaction transaction) {
+            return transaction != null
+                    && active == transaction
+                    && transaction.state() == TerminalState.PENDING;
         }
 
         synchronized boolean clear(Transaction transaction) {
@@ -148,12 +201,21 @@ final class OcrScanner implements AutoCloseable {
     private record ScoredToken(PetalMatcher.Token token, int score) {}
 
     private static final AtomicInteger OCR_THREAD_SEQUENCE = new AtomicInteger();
-    private static final ExecutorService OCR_EXECUTOR = Executors.newSingleThreadExecutor(runnable -> {
-        Thread thread = new Thread(
-                runnable, "pikminx-ocr-" + OCR_THREAD_SEQUENCE.incrementAndGet());
-        thread.setDaemon(true);
-        return thread;
-    });
+    static final int OCR_CALLBACK_QUEUE_CAPACITY = 8;
+    static final int OCR_CALLBACK_WORKER_COUNT = 1;
+    private static final ExecutorService OCR_EXECUTOR = new ThreadPoolExecutor(
+            OCR_CALLBACK_WORKER_COUNT,
+            OCR_CALLBACK_WORKER_COUNT,
+            0L,
+            TimeUnit.MILLISECONDS,
+            new ArrayBlockingQueue<>(OCR_CALLBACK_QUEUE_CAPACITY),
+            runnable -> {
+                Thread thread = new Thread(
+                        runnable, "pikminx-ocr-" + OCR_THREAD_SEQUENCE.incrementAndGet());
+                thread.setDaemon(true);
+                return thread;
+            },
+            new ThreadPoolExecutor.CallerRunsPolicy());
 
     private final List<RecognizerEntry> recognizers = List.of(
             new RecognizerEntry(Script.LATIN, TextRecognition.getClient(
@@ -183,6 +245,19 @@ final class OcrScanner implements AutoCloseable {
                 && failure == null;
     }
 
+    static boolean canProcessCallback(
+            Transaction transaction, BooleanSupplier callbackAdmission) {
+        if (transaction == null || callbackAdmission == null
+                || transaction.state() != TerminalState.PENDING) {
+            return false;
+        }
+        try {
+            return callbackAdmission.getAsBoolean();
+        } catch (RuntimeException ignored) {
+            return false;
+        }
+    }
+
     /** 依流程 profile 統一裁切、縮放、辨識及還原來源座標。 */
     void scan(
             Bitmap bitmap,
@@ -191,6 +266,87 @@ final class OcrScanner implements AutoCloseable {
             Transaction transaction,
             Executor callbackExecutor,
             FrameCallback callback) {
+        scan(
+                bitmap,
+                profile,
+                captureGeometry,
+                transaction,
+                () -> transaction != null && transaction.state() == TerminalState.PENDING,
+                callbackExecutor,
+                callback,
+                null);
+    }
+
+    /** Scans with a cheap caller-owned guard checked before each result is parsed. */
+    void scan(
+            Bitmap bitmap,
+            OcrScan.Profile profile,
+            CaptureGeometry captureGeometry,
+            Transaction transaction,
+            BooleanSupplier callbackAdmission,
+            Executor callbackExecutor,
+            FrameCallback callback) {
+        scan(
+                bitmap,
+                profile,
+                captureGeometry,
+                transaction,
+                callbackAdmission,
+                callbackExecutor,
+                callback,
+                null);
+    }
+
+    /** Scans with bounded runtime timeline instrumentation; the instrumentation is optional. */
+    void scan(
+            Bitmap bitmap,
+            OcrScan.Profile profile,
+            CaptureGeometry captureGeometry,
+            Transaction transaction,
+            BooleanSupplier callbackAdmission,
+            Executor callbackExecutor,
+            FrameCallback callback,
+            OcrRuntimeDiagnostics diagnostics) {
+        scan(
+                bitmap,
+                profile,
+                captureGeometry,
+                transaction,
+                0L,
+                callbackAdmission,
+                callbackExecutor,
+                callback,
+                diagnostics);
+    }
+
+    /** Scans while retaining the caller's action-admission epoch on the delivered frame. */
+    void scan(
+            Bitmap bitmap,
+            OcrScan.Profile profile,
+            CaptureGeometry captureGeometry,
+            Transaction transaction,
+            long admissionEpoch,
+            BooleanSupplier callbackAdmission,
+            Executor callbackExecutor,
+            FrameCallback callback,
+            OcrRuntimeDiagnostics diagnostics) {
+        scan(bitmap, profile, captureGeometry, null, transaction, admissionEpoch,
+                callbackAdmission, callbackExecutor, callback, diagnostics);
+    }
+
+    void scan(Bitmap bitmap, OcrScan.Profile profile, CaptureGeometry captureGeometry,
+            OcrScan.Transform requestedTransform, Transaction transaction, long admissionEpoch,
+            BooleanSupplier callbackAdmission, Executor callbackExecutor, FrameCallback callback,
+            OcrRuntimeDiagnostics diagnostics) {
+        if (diagnostics != null && transaction != null) {
+            transaction.attachDiagnostics(diagnostics);
+        }
+        OcrRuntimeDiagnostics runtimeDiagnostics = diagnostics == null || transaction == null
+                ? transaction == null ? null : transaction.diagnostics()
+                : diagnostics;
+        if (runtimeDiagnostics != null && transaction != null) {
+            runtimeDiagnostics.markQueueEnter(transaction.id());
+        }
         if (captureGeometry == null
                 || transaction == null
                 || transaction.id().captureSequence() != captureGeometry.captureSequence()
@@ -202,8 +358,17 @@ final class OcrScanner implements AutoCloseable {
                     new GeometryException("OCR transaction geometry is inconsistent"));
             return;
         }
-        OcrScan.Transform transform = OcrScan.Transform.create(
-                profile, bitmap.getWidth(), bitmap.getHeight(), captureGeometry);
+        OcrScan.Transform transform = requestedTransform == null ? OcrScan.Transform.create(
+                profile, bitmap.getWidth(), bitmap.getHeight(), captureGeometry) : requestedTransform;
+        if (requestedTransform != null && (!captureGeometry.isActionSafe(transform)
+                || transform.cropLeft() < 0 || transform.cropTop() < 0
+                || transform.cropWidth() <= 0 || transform.cropHeight() <= 0
+                || transform.cropLeft() + transform.cropWidth() > bitmap.getWidth()
+                || transform.cropTop() + transform.cropHeight() > bitmap.getHeight())) {
+            finishFailure(transaction, callbackExecutor, callback,
+                    new GeometryException("OCR ROI does not belong to this capture"));
+            return;
+        }
         Bitmap analysis;
         try {
             analysis = analysisBitmap(bitmap, transform);
@@ -242,14 +407,65 @@ final class OcrScanner implements AutoCloseable {
         AtomicReference<Exception> firstFailure = new AtomicReference<>();
         TaskResourceLease resources = new TaskResourceLease(
                 selectedRecognizers.size(), analysis::recycle);
+        transaction.onTerminal(() -> {
+            if (transaction.state() != TerminalState.SUCCESS) {
+                // ML Kit Task has no public cancel operation. Hold the analysis bitmap until
+                // every late callback has completed, while allowing stale callbacks to return
+                // before touching the OCR result.
+                resources.releaseAfterTasks();
+            }
+        });
         long startedAt = android.os.SystemClock.elapsedRealtime();
+        if (runtimeDiagnostics != null) {
+            runtimeDiagnostics.markWorkerStart(transaction.id());
+        }
         for (RecognizerEntry entry : selectedRecognizers) {
+            String recognizerType = entry.script().name();
+            if (runtimeDiagnostics != null) {
+                runtimeDiagnostics.markRecognizerStart(transaction.id(), recognizerType);
+            }
             try {
-                entry.recognizer().process(image).addOnCompleteListener(OCR_EXECUTOR, task -> {
+                Executor recognizerCallbackExecutor = runtimeDiagnostics == null
+                        ? OCR_EXECUTOR
+                        : runtimeDiagnostics.executorForRecognizer(
+                                transaction.id(), recognizerType, OCR_EXECUTOR);
+                entry.recognizer().process(image).addOnCompleteListener(
+                        recognizerCallbackExecutor, task -> {
+                    if (runtimeDiagnostics != null) {
+                        runtimeDiagnostics.markRecognizerEnd(transaction.id(), recognizerType);
+                    }
+                    if (!canProcessCallback(transaction, callbackAdmission)) {
+                        if (runtimeDiagnostics != null) {
+                            runtimeDiagnostics.markStaleCallback();
+                        }
+                        completedTasks.incrementAndGet();
+                        if (resources.taskComplete()) {
+                            if (runtimeDiagnostics != null) {
+                                runtimeDiagnostics.markAllRecognizersComplete(transaction.id());
+                            }
+                            resources.releaseAfterTasks();
+                        }
+                        return;
+                    }
                     Exception taskFailure = null;
                     try {
                         if (task.isSuccessful()) {
-                            recognized.addAll(tokens(task.getResult(), entry.script()));
+                            if (canProcessCallback(transaction, callbackAdmission)) {
+                                if (runtimeDiagnostics != null) {
+                                    runtimeDiagnostics.markTokenParsingStart(
+                                            transaction.id(), recognizerType);
+                                }
+                                try {
+                                    recognized.addAll(tokens(task.getResult(), entry.script()));
+                                } finally {
+                                    if (runtimeDiagnostics != null) {
+                                        runtimeDiagnostics.markTokenParsingEnd(
+                                                transaction.id(), recognizerType);
+                                    }
+                                }
+                            } else if (runtimeDiagnostics != null) {
+                                runtimeDiagnostics.markStaleCallback();
+                            }
                         } else {
                             taskFailure = task.getException();
                             if (taskFailure == null) {
@@ -271,18 +487,39 @@ final class OcrScanner implements AutoCloseable {
                     if (!resources.taskComplete()) {
                         return;
                     }
+                    if (runtimeDiagnostics != null) {
+                        runtimeDiagnostics.markAllRecognizersComplete(transaction.id());
+                    }
+                    // Keep the scanner-owned bitmap alive until the success callback has
+                    // finished consuming Frame.pixelAtSource().  The callback may run
+                    // detectors against the frame after all recognizer tasks complete.
+                    // deliverSuccess() owns the final release for the successful path;
+                    // failure/stale paths release here or through the terminal listener.
                     Exception failure = firstFailure.get();
+                    boolean callbackStillAdmitted = canProcessCallback(
+                            transaction, callbackAdmission);
                     if (!canDeliverCompleteFrame(
                                     selectedRecognizers.size(), completedCount, failure)
-                            || transaction.state() != TerminalState.PENDING) {
+                            || !callbackStillAdmitted) {
+                        if (!callbackStillAdmitted && failure == null && runtimeDiagnostics != null) {
+                            runtimeDiagnostics.markStaleCallback();
+                        }
                         resources.releaseAfterTasks();
                         return;
                     }
                     try {
+                        if (!canProcessCallback(transaction, callbackAdmission)) {
+                            if (runtimeDiagnostics != null) {
+                                runtimeDiagnostics.markStaleCallback();
+                            }
+                            resources.releaseAfterTasks();
+                            return;
+                        }
                         List<PetalMatcher.Token> merged =
                                 transform.toSourceTokens(merge(recognized));
                         OcrScan.Frame frame = new OcrScan.Frame(
                                 transaction.id(),
+                                admissionEpoch,
                                 profile,
                                 transform,
                                 merged,
@@ -297,19 +534,28 @@ final class OcrScanner implements AutoCloseable {
                         if (BuildConfig.GEOMETRY_VALIDATION) {
                             recordGeometrySuccess(frame);
                         }
-                        deliverSuccess(callbackExecutor, callback, frame, resources);
+                        deliverSuccess(
+                                callbackExecutor, callback, frame, resources, transaction);
                     } catch (RuntimeException error) {
                         finishFailure(transaction, callbackExecutor, callback, error);
                         resources.releaseAfterTasks();
                     }
                 });
             } catch (RuntimeException error) {
+                if (runtimeDiagnostics != null) {
+                    runtimeDiagnostics.markRecognizerEnd(transaction.id(), recognizerType);
+                }
                 if (firstFailure.compareAndSet(null, error)) {
                     finishFailure(transaction, callbackExecutor, callback, error);
                     resources.releaseAfterTasks();
                 }
                 completedTasks.incrementAndGet();
-                resources.taskComplete();
+                if (resources.taskComplete()) {
+                    if (runtimeDiagnostics != null) {
+                        runtimeDiagnostics.markAllRecognizersComplete(transaction.id());
+                    }
+                    resources.releaseAfterTasks();
+                }
             }
         }
     }
@@ -322,8 +568,17 @@ final class OcrScanner implements AutoCloseable {
         if (transaction == null || !transaction.tryFinish(TerminalState.FAILURE)) {
             return;
         }
+        OcrRuntimeDiagnostics diagnostics = transaction.diagnostics();
+        if (diagnostics != null) {
+            diagnostics.markMainExecutorEnqueue(transaction.id());
+        }
         try {
-            callbackExecutor.execute(() -> callback.onFailure(error));
+            callbackExecutor.execute(() -> {
+                if (diagnostics != null) {
+                    diagnostics.markMainExecutorStart(transaction.id());
+                }
+                callback.onFailure(error);
+            });
         } catch (RuntimeException ignored) {
             // The service watchdog owns recovery if callback delivery is unavailable.
         }
@@ -333,9 +588,18 @@ final class OcrScanner implements AutoCloseable {
             Executor callbackExecutor,
             FrameCallback callback,
             OcrScan.Frame frame,
-            TaskResourceLease resources) {
+            TaskResourceLease resources,
+            Transaction transaction) {
+        OcrRuntimeDiagnostics diagnostics = transaction == null
+                ? null : transaction.diagnostics();
+        if (diagnostics != null) {
+            diagnostics.markMainExecutorEnqueue(transaction.id());
+        }
         try {
             callbackExecutor.execute(() -> {
+                if (diagnostics != null) {
+                    diagnostics.markMainExecutorStart(transaction.id());
+                }
                 try {
                     callback.onSuccess(frame);
                 } finally {
