@@ -1,0 +1,102 @@
+plugins {
+    id "com.android.application"
+}
+
+// 可選的本地簽章檔只在開發者提供時套用，沒有簽章檔仍可建立 release APK。
+def configuredSigningDirectory = System.getenv("PIKMINX_SIGNING_DIR")
+def releaseSigningDirectory = configuredSigningDirectory
+        ? file(configuredSigningDirectory)
+        : rootProject.file("signing")
+if (!releaseSigningDirectory.exists()) {
+    releaseSigningDirectory = rootProject.file("../../../signing")
+}
+def releaseSigningFile = new File(releaseSigningDirectory, "keystore.properties")
+def releaseSigning = new Properties()
+if (releaseSigningFile.exists()) {
+    releaseSigningFile.withInputStream { releaseSigning.load(it) }
+}
+
+android {
+    namespace "com.pikminx.helper"
+    compileSdk 35
+
+    // minSdk 30 對應目前無障礙截圖與懸浮窗流程的最低支援版本。
+    defaultConfig {
+        applicationId "com.pikminx.helper"
+        minSdk 30
+        targetSdk 35
+        versionCode 375
+        versionName "3.1.65"
+        buildConfigField "boolean", "GEOMETRY_VALIDATION", "false"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    sourceSets {
+        main {
+            assets {
+                // Mushroom assets remain provenance evidence but are not packaged while frozen.
+                exclude("mushroom_templates/**")
+                exclude("leaflet/**")
+                exclude("mushroom_map.html")
+            }
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    signingConfigs {
+        release {
+            if (releaseSigningFile.exists()) {
+                storeFile new File(releaseSigningDirectory, releaseSigning.storeFile)
+                storePassword releaseSigning.storePassword
+                keyAlias releaseSigning.keyAlias
+                keyPassword releaseSigning.keyPassword
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            buildConfigField "boolean", "GEOMETRY_VALIDATION", "true"
+        }
+        release {
+            if (releaseSigningFile.exists()) {
+                signingConfig signingConfigs.release
+            }
+            minifyEnabled false
+        }
+    }
+
+    lint {
+        // 保留原生 View 實作，停用與本專案無關的兩項提示。
+        disable "AndroidGradlePluginVersion", "AppCompatCustomView"
+        warningsAsErrors true
+    }
+}
+
+tasks.matching { it.name == "mergeReleaseAssets" }.configureEach {
+    doLast {
+        // Keep disabled Mushroom provenance files out of the release APK.
+        delete file("$buildDir/intermediates/assets/release/mergeReleaseAssets/mushroom_templates")
+        delete file("$buildDir/intermediates/assets/release/mergeReleaseAssets/leaflet")
+        delete file("$buildDir/intermediates/assets/release/mergeReleaseAssets/mushroom_map.html")
+    }
+}
+
+dependencies {
+    implementation "com.google.mlkit:text-recognition:16.0.1"
+    implementation "com.google.mlkit:text-recognition-chinese:16.0.1"
+    implementation "com.google.mlkit:text-recognition-devanagari:16.0.1"
+    implementation "com.google.mlkit:text-recognition-japanese:16.0.1"
+    implementation "com.google.mlkit:text-recognition-korean:16.0.1"
+    testImplementation "junit:junit:4.13.2"
+    androidTestImplementation "androidx.test:runner:1.7.0"
+    androidTestImplementation "androidx.test.ext:junit:1.3.0"
+}
