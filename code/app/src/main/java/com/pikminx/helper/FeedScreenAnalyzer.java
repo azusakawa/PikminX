@@ -1,5 +1,6 @@
 package com.pikminx.helper;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -27,7 +28,11 @@ final class FeedScreenAnalyzer {
             int rightEndX,
             int y) {}
 
-    record BloomTarget(int x, int y, int score) {}
+    record BloomTarget(int x, int y, int score, int width, int height) {
+        BloomTarget(int x, int y, int score) {
+            this(x, y, score, 0, 0);
+        }
+    }
 
     record SpiralPoint(int x, int y) {}
 
@@ -36,6 +41,8 @@ final class FeedScreenAnalyzer {
     record FeedRoundStatistics(int nectarConsumed, int petalsObserved) {}
 
     enum NoEffectAction { WAIT, RETRY, GIVE_UP }
+
+    enum NectarPanelAction { WAIT, SELECT_VISIBLE, OPEN_SEARCH }
 
     private FeedScreenAnalyzer() {}
 
@@ -233,6 +240,24 @@ final class FeedScreenAnalyzer {
 
     static boolean isNectarPanelOpen(int width, int height, PixelReader pixelAt) {
         return isNectarPanelVisualOpen(width, height, pixelAt);
+    }
+
+    /** Keeps target visibility separate from whether the confirmed panel may open Search. */
+    static NectarPanelAction nextNectarPanelAction(
+            boolean panelConfirmed,
+            boolean targetVisible,
+            boolean searchControlConfirmed,
+            boolean searchRequired,
+            boolean detailOpen,
+            boolean searchInputActive) {
+        if (!panelConfirmed || detailOpen || searchInputActive) {
+            return NectarPanelAction.WAIT;
+        }
+        if (searchRequired || !targetVisible) {
+            return searchControlConfirmed
+                    ? NectarPanelAction.OPEN_SEARCH : NectarPanelAction.WAIT;
+        }
+        return NectarPanelAction.SELECT_VISIBLE;
     }
 
     static boolean isNectarPanelVisualOpen(int width, int height, PixelReader pixelAt) {
@@ -609,7 +634,8 @@ final class FeedScreenAnalyzer {
         if (before == null || before.pixels().length != before.columns() * before.rows()) {
             return List.of();
         }
-        List<BloomTarget> raw = new ArrayList<>();
+        boolean[] glow = new boolean[before.pixels().length];
+        int[] strength = new int[before.pixels().length];
         int changedScenePixels = 0;
         int[] changedSceneTiles = new int[16];
         for (int row = 0; row < before.rows(); row++) {
@@ -625,10 +651,9 @@ final class FeedScreenAnalyzer {
                     changedSceneTiles[sceneTile(row, column, before.rows(), before.columns())]++;
                 }
                 if (isNewGlow(previous, current)) {
-                    raw.add(new BloomTarget(
-                            x,
-                            y,
-                            maximum(current) - maximum(previous)));
+                    int index = row * before.columns() + column;
+                    glow[index] = true;
+                    strength[index] = maximum(current) - maximum(previous);
                 }
             }
         }
@@ -636,23 +661,82 @@ final class FeedScreenAnalyzer {
                 changedScenePixels, before.pixels().length, changedSceneTiles)) {
             return List.of();
         }
-        raw.sort((left, right) -> Integer.compare(right.score(), left.score()));
+
         List<BloomTarget> targets = new ArrayList<>();
-        int minimumXDistance = Math.max(12, Math.round(width * 0.045f));
-        int minimumYDistance = Math.max(12, Math.round(height * 0.035f));
-        for (BloomTarget candidate : raw) {
-            boolean overlaps = false;
-            for (BloomTarget accepted : targets) {
-                if (Math.abs(candidate.x() - accepted.x()) <= minimumXDistance
-                        && Math.abs(candidate.y() - accepted.y()) <= minimumYDistance) {
-                    overlaps = true;
-                    break;
+        boolean[] visited = new boolean[glow.length];
+        ArrayDeque<Integer> pending = new ArrayDeque<>();
+        int cellWidth = Math.max(1, Math.round(width * 0.80f / (before.columns() - 1f)));
+        int cellHeight = Math.max(1, Math.round(height * 0.58f / (before.rows() - 1f)));
+        for (int start = 0; start < glow.length; start++) {
+            if (!glow[start] || visited[start]) {
+                continue;
+            }
+            visited[start] = true;
+            pending.add(start);
+            int count = 0;
+            int minimumColumn = before.columns();
+            int maximumColumn = 0;
+            int minimumRow = before.rows();
+            int maximumRow = 0;
+            int maximumStrength = 0;
+            long sumX = 0L;
+            long sumY = 0L;
+            while (!pending.isEmpty()) {
+                int currentIndex = pending.removeFirst();
+                int row = currentIndex / before.columns();
+                int column = currentIndex % before.columns();
+                int x = Math.min(width - 1,
+                        Math.round(width * (0.10f
+                                + 0.80f * column / (before.columns() - 1f))));
+                int y = Math.min(height - 1,
+                        Math.round(height * (0.20f
+                                + 0.58f * row / (before.rows() - 1f))));
+                count++;
+                sumX += x;
+                sumY += y;
+                minimumColumn = Math.min(minimumColumn, column);
+                maximumColumn = Math.max(maximumColumn, column);
+                minimumRow = Math.min(minimumRow, row);
+                maximumRow = Math.max(maximumRow, row);
+                maximumStrength = Math.max(maximumStrength, strength[currentIndex]);
+                for (int deltaY = -1; deltaY <= 1; deltaY++) {
+                    for (int deltaX = -1; deltaX <= 1; deltaX++) {
+                        int nextRow = row + deltaY;
+                        int nextColumn = column + deltaX;
+                        if ((deltaX == 0 && deltaY == 0)
+                                || nextRow < 0 || nextRow >= before.rows()
+                                || nextColumn < 0 || nextColumn >= before.columns()) {
+                            continue;
+                        }
+                        int next = nextRow * before.columns() + nextColumn;
+                        if (glow[next] && !visited[next]) {
+                            visited[next] = true;
+                            pending.add(next);
+                        }
+                    }
                 }
             }
-            if (!overlaps) {
-                targets.add(candidate);
+            int componentColumns = maximumColumn - minimumColumn + 1;
+            int componentRows = maximumRow - minimumRow + 1;
+            int componentWidth = componentColumns * cellWidth;
+            int componentHeight = componentRows * cellHeight;
+            float fill = count / (float) Math.max(1, componentColumns * componentRows);
+            // The recorded nectar orb spans roughly a quarter of the Care view. Flowers are
+            // local clusters; reject single-pixel UI sparkle and large solid feed effects.
+            if (count < 4
+                    || componentWidth > width * 0.18f
+                    || componentHeight > height * 0.10f
+                    || fill < 0.20f) {
+                continue;
             }
+            targets.add(new BloomTarget(
+                    Math.round(sumX / (float) count),
+                    Math.round(sumY / (float) count),
+                    maximumStrength + count,
+                    componentWidth,
+                    componentHeight));
         }
+        targets.sort((left, right) -> Integer.compare(right.score(), left.score()));
         return List.copyOf(targets);
     }
 
@@ -697,6 +781,8 @@ final class FeedScreenAnalyzer {
         int bestArea = 0;
         long bestX = 0L;
         long bestY = 0L;
+        int bestWidth = 0;
+        int bestHeight = 0;
         for (int row = 0; row < rows; row++) {
             for (int column = 0; column < columns; column++) {
                 int start = row * columns + column;
@@ -709,11 +795,19 @@ final class FeedScreenAnalyzer {
                 int area = 0;
                 long sumX = 0L;
                 long sumY = 0L;
+                int minimumColumn = columns;
+                int maximumColumn = 0;
+                int minimumRow = rows;
+                int maximumRow = 0;
                 while (!pending.isEmpty()) {
                     int index = pending.removeFirst();
                     int currentRow = index / columns;
                     int currentColumn = index % columns;
                     area++;
+                    minimumColumn = Math.min(minimumColumn, currentColumn);
+                    maximumColumn = Math.max(maximumColumn, currentColumn);
+                    minimumRow = Math.min(minimumRow, currentRow);
+                    maximumRow = Math.max(maximumRow, currentRow);
                     sumX += left + Math.round((currentColumn + 0.5f)
                             * (right - left) / columns);
                     sumY += top + Math.round((currentRow + 0.5f)
@@ -734,10 +828,26 @@ final class FeedScreenAnalyzer {
                         }
                     }
                 }
+                int componentColumns = maximumColumn - minimumColumn + 1;
+                int componentRows = maximumRow - minimumRow + 1;
+                int componentWidth = componentColumns * cellWidth;
+                int componentHeight = componentRows * cellHeight;
+                float fill = area / (float) Math.max(1, componentColumns * componentRows);
+                float aspectRatio = componentWidth / (float) Math.max(1, componentHeight);
+                if (area < 4
+                        || componentWidth > width * 0.18f
+                        || componentHeight > height * 0.10f
+                        || fill < 0.20f
+                        || aspectRatio < 0.45f
+                        || aspectRatio > 2.20f) {
+                    continue;
+                }
                 if (area > bestArea) {
                     bestArea = area;
                     bestX = sumX;
                     bestY = sumY;
+                    bestWidth = componentWidth;
+                    bestHeight = componentHeight;
                 }
             }
         }
@@ -746,7 +856,9 @@ final class FeedScreenAnalyzer {
                 : new BloomTarget(
                         Math.round(bestX / (float) bestArea),
                         Math.round(bestY / (float) bestArea),
-                        bestArea);
+                        bestArea,
+                        bestWidth,
+                        bestHeight);
     }
 
     private static boolean isExistingFlowerPixel(
@@ -770,7 +882,39 @@ final class FeedScreenAnalyzer {
         return first != null
                 && second != null
                 && Math.abs(first.x() - second.x()) <= Math.max(12, width * 0.05f)
-                && Math.abs(first.y() - second.y()) <= Math.max(12, height * 0.04f);
+                && Math.abs(first.y() - second.y()) <= Math.max(12, height * 0.04f)
+                && sameBloomGeometry(first.width(), second.width())
+                && sameBloomGeometry(first.height(), second.height());
+    }
+
+    private static boolean sameBloomGeometry(int first, int second) {
+        return first <= 0
+                || second <= 0
+                || Math.abs(first - second) <= Math.max(8, Math.round(Math.min(first, second) * 0.35f));
+    }
+
+    /** Temporarily excludes the known feed-release zone while its orb/flash can remain visible. */
+    static BloomTarget nearestHarvestBloomTarget(
+            List<BloomTarget> targets,
+            int width,
+            int height,
+            boolean excludeRecentFeedEffect) {
+        if (!excludeRecentFeedEffect) {
+            return nearestBloomTargetToCenter(targets, width, height);
+        }
+        if (targets == null || targets.isEmpty() || width <= 0 || height <= 0) {
+            return null;
+        }
+        int centerX = Math.round(width * 0.50f);
+        int centerY = Math.round(height * 0.54f);
+        List<BloomTarget> outsideEffect = new ArrayList<>();
+        for (BloomTarget target : targets) {
+            if (Math.abs(target.x() - centerX) > width * 0.12f
+                    || Math.abs(target.y() - centerY) > height * 0.08f) {
+                outsideEffect.add(target);
+            }
+        }
+        return nearestBloomTargetToCenter(outsideEffect, width, height);
     }
 
     static BloomTarget nearestBloomTargetToCenter(

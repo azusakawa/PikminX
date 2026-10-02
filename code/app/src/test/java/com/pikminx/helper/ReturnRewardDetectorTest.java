@@ -49,6 +49,40 @@ public final class ReturnRewardDetectorTest {
     }
 
     @Test
+    public void findsReturnedSeedlingPotGeometry() {
+        int[] pixels = field();
+        rectangle(pixels, 178, 485, 254, 505, rgb(235, 110, 145));
+        rectangle(pixels, 188, 505, 244, 585, rgb(230, 95, 135));
+
+        assertNotNull(ReturnRewardDetector.find(
+                WIDTH, HEIGHT, (x, y) -> pixels[y * WIDTH + x]));
+    }
+
+    @Test
+    public void ignoresTallPikminLikeBodyOnField() {
+        int[] pixels = field();
+        ellipse(pixels, 216, 490, 27, 30, rgb(235, 205, 115));
+        rectangle(pixels, 205, 515, 227, 635, rgb(120, 55, 180));
+        rectangle(pixels, 190, 550, 242, 560, rgb(120, 55, 180));
+
+        assertNull(ReturnRewardDetector.find(
+                WIDTH, HEIGHT, (x, y) -> pixels[y * WIDTH + x]));
+    }
+
+    @Test
+    public void ignoresTallPikminLikeBodyClippedByArmedRoi() {
+        int[] pixels = field();
+        ellipse(pixels, 178, 490, 27, 30, rgb(235, 205, 115));
+        rectangle(pixels, 170, 515, 192, 635, rgb(120, 55, 180));
+
+        assertNull(ReturnRewardDetector.find(
+                WIDTH,
+                HEIGHT,
+                (x, y) -> pixels[y * WIDTH + x],
+                new ReturnRewardDetector.Region(170, 450, 300, 650)));
+    }
+
+    @Test
     public void findsReturnedFruitNearRightEdgeOfCollectionArea() {
         int[] pixels = field();
         ellipse(pixels, 340, 555, 38, 60, rgb(220, 150, 45));
@@ -210,6 +244,14 @@ public final class ReturnRewardDetectorTest {
         assertFalse(ReturnRewardDetector.hasNectarCapacityWarning(List.of(
                 token("精華", 180, 620),
                 token("已經滿了", 180, 660)), WIDTH, HEIGHT));
+    }
+
+    @Test
+    public void doesNotCombineUnrelatedWarningTokensAcrossTheScreen() {
+        assertFalse(ReturnRewardDetector.hasNectarCapacityWarning(List.of(
+                token("精華", 70, 620),
+                token("攜帶空間", 350, 620),
+                token("已經滿了", 350, 670)), WIDTH, HEIGHT));
     }
 
     @Test

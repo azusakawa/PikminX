@@ -65,6 +65,35 @@ public final class FeedScreenAnalyzerTest {
     }
 
     @Test
+    public void targetAbsentFromConfirmedPanelTransitionsToSearch() {
+        FeedScreenAnalyzer.NectarSearchAnalysis analysis =
+                FeedScreenAnalyzer.analyzeVisibleNectarList(
+                        List.of(),
+                        "紅色花瓣",
+                        1000,
+                        1000,
+                        (x, y) -> 0xfffafafa);
+
+        assertEquals("visible-target-missing", analysis.reason());
+        assertEquals(
+                FeedScreenAnalyzer.NectarPanelAction.OPEN_SEARCH,
+                FeedScreenAnalyzer.nextNectarPanelAction(
+                        true, false, true, false, false, false));
+    }
+
+    @Test
+    public void unconfirmedPanelNeverTransitionsToSearch() {
+        assertEquals(
+                FeedScreenAnalyzer.NectarPanelAction.WAIT,
+                FeedScreenAnalyzer.nextNectarPanelAction(
+                        false, false, true, true, false, false));
+        assertEquals(
+                FeedScreenAnalyzer.NectarPanelAction.WAIT,
+                FeedScreenAnalyzer.nextNectarPanelAction(
+                        true, false, false, true, false, false));
+    }
+
+    @Test
     public void invalidatesNectarListWhenPikminDetailAppears() {
         FeedScreenAnalyzer.NectarSearchAnalysis analysis =
                 FeedScreenAnalyzer.analyzeVisibleNectarList(
@@ -578,6 +607,53 @@ public final class FeedScreenAnalyzerTest {
     }
 
     @Test
+    public void centralNectarEffectIsRejectedAndRealFlowerIsSelected() {
+        int width = 1000;
+        int height = 2000;
+        FeedScreenAnalyzer.VisualSignature before = FeedScreenAnalyzer.capture(
+                width, height, (x, y) -> 0xff303030);
+        FeedScreenAnalyzer.PixelReader after = glowScene(
+                width,
+                height,
+                new int[] {36, 42, 8},
+                new int[] {52, 28, 1});
+
+        List<FeedScreenAnalyzer.BloomTarget> targets =
+                FeedScreenAnalyzer.findBloomTargets(before, width, height, after);
+        FeedScreenAnalyzer.BloomTarget selected =
+                FeedScreenAnalyzer.nearestHarvestBloomTarget(
+                        targets, width, height, true);
+
+        assertNotNull(selected);
+        assertTrue(selected.x() > width * 0.60f);
+    }
+
+    @Test
+    public void residualFeedEffectAloneIsNotABloomTarget() {
+        int width = 1000;
+        int height = 2000;
+        FeedScreenAnalyzer.VisualSignature before = FeedScreenAnalyzer.capture(
+                width, height, (x, y) -> 0xff303030);
+
+        assertTrue(FeedScreenAnalyzer.findBloomTargets(
+                before,
+                width,
+                height,
+                glowScene(width, height, new int[] {36, 42, 8})).isEmpty());
+    }
+
+    @Test
+    public void recentFeedEffectExclusionDoesNotPermanentlyBanCenteredFlowers() {
+        FeedScreenAnalyzer.BloomTarget centered =
+                new FeedScreenAnalyzer.BloomTarget(500, 1080, 120, 40, 40);
+
+        assertNull(FeedScreenAnalyzer.nearestHarvestBloomTarget(
+                List.of(centered), 1000, 2000, true));
+        assertEquals(centered, FeedScreenAnalyzer.nearestHarvestBloomTarget(
+                List.of(centered), 1000, 2000, false));
+    }
+
+    @Test
     public void skipsPreviouslyAttemptedBloomTargets() {
         FeedScreenAnalyzer.BloomTarget first =
                 new FeedScreenAnalyzer.BloomTarget(400, 700, 100);
@@ -636,7 +712,7 @@ public final class FeedScreenAnalyzerTest {
                         1000,
                         2000,
                         (x, y) -> {
-                            if (Math.abs(x - 500) <= 120 && Math.abs(y - 700) <= 120) {
+                            if (Math.abs(x - 500) <= 70 && Math.abs(y - 700) <= 70) {
                                 return 0xffffd52e;
                             }
                             if (Math.abs(x - 120) <= 20 && Math.abs(y - 500) <= 20) {
@@ -651,14 +727,35 @@ public final class FeedScreenAnalyzerTest {
     }
 
     @Test
+    public void rejectsLargeSolidColorRegionAsExistingBloom() {
+        assertNull(FeedScreenAnalyzer.findExistingBloomTarget(
+                "黃色花瓣",
+                1000,
+                2000,
+                (x, y) -> Math.abs(x - 500) <= 120 && Math.abs(y - 700) <= 120
+                        ? 0xffffd52e : 0xff4a9b50));
+    }
+
+    @Test
     public void matchesOnlyNearbyBloomTargetsAcrossFrames() {
         FeedScreenAnalyzer.BloomTarget first =
-                new FeedScreenAnalyzer.BloomTarget(400, 700, 100);
+                new FeedScreenAnalyzer.BloomTarget(400, 700, 100, 40, 40);
 
         assertTrue(FeedScreenAnalyzer.isSameBloomTarget(
-                first, new FeedScreenAnalyzer.BloomTarget(430, 730, 90), 1000, 2000));
+                first,
+                new FeedScreenAnalyzer.BloomTarget(430, 730, 90, 46, 44),
+                1000,
+                2000));
         assertFalse(FeedScreenAnalyzer.isSameBloomTarget(
-                first, new FeedScreenAnalyzer.BloomTarget(520, 900, 90), 1000, 2000));
+                first,
+                new FeedScreenAnalyzer.BloomTarget(520, 900, 90, 40, 40),
+                1000,
+                2000));
+        assertFalse(FeedScreenAnalyzer.isSameBloomTarget(
+                first,
+                new FeedScreenAnalyzer.BloomTarget(405, 705, 90, 100, 100),
+                1000,
+                2000));
     }
 
     private static FeedScreenAnalyzer.PixelReader glowClusters(
@@ -668,6 +765,21 @@ public final class FeedScreenAnalyzerTest {
             int row = Math.round((y / (float) height - 0.20f) / 0.58f * 71f);
             for (int[] center : centers) {
                 if (Math.abs(column - center[0]) <= 1 && Math.abs(row - center[1]) <= 1) {
+                    return 0xfffff2c0;
+                }
+            }
+            return 0xff303030;
+        };
+    }
+
+    private static FeedScreenAnalyzer.PixelReader glowScene(
+            int width, int height, int[]... clusters) {
+        return (x, y) -> {
+            int column = Math.round((x / (float) width - 0.10f) / 0.80f * 71f);
+            int row = Math.round((y / (float) height - 0.20f) / 0.58f * 71f);
+            for (int[] cluster : clusters) {
+                if (Math.abs(column - cluster[0]) <= cluster[2]
+                        && Math.abs(row - cluster[1]) <= cluster[2]) {
                     return 0xfffff2c0;
                 }
             }

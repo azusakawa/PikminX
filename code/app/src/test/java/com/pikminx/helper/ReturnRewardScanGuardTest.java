@@ -21,6 +21,20 @@ public final class ReturnRewardScanGuardTest {
     }
 
     @Test
+    public void sameCenterWithDifferentGeometryRestartsConfirmation() {
+        ReturnRewardScanGuard guard = new ReturnRewardScanGuard();
+        ReturnRewardDetector.Target narrow = target(214, 525, 60, 150);
+        ReturnRewardDetector.Target fruit = target(214, 525, 120, 100);
+
+        assertEquals(ReturnRewardScanGuard.Decision.WAIT,
+                guard.observe(PostcardMatcher.Page.UNKNOWN, narrow, WIDTH, HEIGHT));
+        assertEquals(ReturnRewardScanGuard.Decision.WAIT,
+                guard.observe(PostcardMatcher.Page.UNKNOWN, fruit, WIDTH, HEIGHT));
+        assertEquals(ReturnRewardScanGuard.Decision.TARGET_CONFIRMED,
+                guard.observe(PostcardMatcher.Page.UNKNOWN, fruit, WIDTH, HEIGHT));
+    }
+
+    @Test
     public void postcardPageWinsEvenWhenPixelsStillLookLikeAReward() {
         ReturnRewardScanGuard guard = new ReturnRewardScanGuard();
 
@@ -33,7 +47,7 @@ public final class ReturnRewardScanGuardTest {
     }
 
     @Test
-    public void pikminDetailCompletesAfterTwoFramesInsteadOfConfirmingDecoration() {
+    public void falseTargetThenPikminDetailRecoversBeforeFreshRescan() {
         ReturnRewardScanGuard guard = new ReturnRewardScanGuard();
         ReturnRewardDetector.Target decoration = target(214, 525);
 
@@ -42,17 +56,46 @@ public final class ReturnRewardScanGuardTest {
                         PostcardMatcher.Page.UNKNOWN,
                         decoration,
                         WIDTH,
-                        HEIGHT,
-                        false,
-                        true));
-        assertEquals(ReturnRewardScanGuard.Decision.SQUAD_COMPLETE,
+                        HEIGHT));
+        assertEquals(ReturnRewardScanGuard.Decision.TARGET_CONFIRMED,
                 guard.observe(
                         PostcardMatcher.Page.UNKNOWN,
                         decoration,
                         WIDTH,
+                        HEIGHT));
+        assertEquals(ReturnRewardScanGuard.Decision.DETAIL_RECOVERY,
+                guard.observe(
+                        PostcardMatcher.Page.UNKNOWN,
+                        null,
+                        WIDTH,
+                        HEIGHT,
+                        true,
+                        true,
+                        false));
+        assertEquals(ReturnRewardScanGuard.Decision.WAIT,
+                guard.observe(
+                        PostcardMatcher.Page.UNKNOWN,
+                        null,
+                        WIDTH,
                         HEIGHT,
                         false,
+                        false,
                         true));
+        assertEquals(ReturnRewardScanGuard.Decision.RECOVERY_COMPLETE,
+                guard.observe(
+                        PostcardMatcher.Page.UNKNOWN,
+                        null,
+                        WIDTH,
+                        HEIGHT,
+                        false,
+                        false,
+                        true));
+        assertEquals(ReturnRewardScanGuard.Decision.WAIT,
+                guard.observe(
+                        PostcardMatcher.Page.UNKNOWN, target(250, 555), WIDTH, HEIGHT));
+        assertEquals(ReturnRewardScanGuard.Decision.TARGET_CONFIRMED,
+                guard.observe(
+                        PostcardMatcher.Page.UNKNOWN, target(254, 559), WIDTH, HEIGHT));
     }
 
     @Test
@@ -66,7 +109,32 @@ public final class ReturnRewardScanGuardTest {
                         WIDTH,
                         HEIGHT,
                         false,
-                        true));
+                        true,
+                        false));
+    }
+
+    @Test
+    public void visualSquadCloseupWithoutPikminDetailStillCompletes() {
+        ReturnRewardScanGuard guard = new ReturnRewardScanGuard();
+
+        assertEquals(ReturnRewardScanGuard.Decision.WAIT,
+                guard.observe(
+                        PostcardMatcher.Page.UNKNOWN,
+                        null,
+                        WIDTH,
+                        HEIGHT,
+                        false,
+                        true,
+                        false));
+        assertEquals(ReturnRewardScanGuard.Decision.SQUAD_COMPLETE,
+                guard.observe(
+                        PostcardMatcher.Page.UNKNOWN,
+                        null,
+                        WIDTH,
+                        HEIGHT,
+                        false,
+                        true,
+                        false));
     }
 
     @Test
@@ -194,7 +262,7 @@ public final class ReturnRewardScanGuardTest {
     }
 
     @Test
-    public void persistentTargetCanBeReconfirmedAfterAnimationSettle() {
+    public void persistentTargetCannotRearmWithoutDisappearing() {
         ReturnRewardScanGuard guard = new ReturnRewardScanGuard();
         ReturnRewardDetector.Target sameCenter = target(214, 525);
 
@@ -204,23 +272,51 @@ public final class ReturnRewardScanGuardTest {
                 guard.observe(PostcardMatcher.Page.UNKNOWN, sameCenter, WIDTH, HEIGHT));
         assertEquals(ReturnRewardScanGuard.Decision.WAIT,
                 guard.observe(PostcardMatcher.Page.UNKNOWN, sameCenter, WIDTH, HEIGHT));
-        assertEquals(ReturnRewardScanGuard.Decision.WAIT,
+        for (int index = 0; index < 10; index++) {
+            assertEquals(ReturnRewardScanGuard.Decision.WAIT,
+                    guard.observe(
+                            PostcardMatcher.Page.UNKNOWN,
+                            sameCenter,
+                            WIDTH,
+                            HEIGHT));
+        }
+    }
+
+    @Test
+    public void detailRecoveryBackRequestsAreBounded() {
+        ReturnRewardScanGuard guard = new ReturnRewardScanGuard();
+        ReturnRewardDetector.Target falseTarget = target(214, 525);
+        guard.observe(PostcardMatcher.Page.UNKNOWN, falseTarget, WIDTH, HEIGHT);
+        guard.observe(PostcardMatcher.Page.UNKNOWN, falseTarget, WIDTH, HEIGHT);
+
+        for (int index = 0; index < 3; index++) {
+            assertEquals(ReturnRewardScanGuard.Decision.DETAIL_RECOVERY,
+                    guard.observe(
+                            PostcardMatcher.Page.UNKNOWN,
+                            null,
+                            WIDTH,
+                            HEIGHT,
+                            true,
+                            true,
+                            false));
+        }
+        assertEquals(ReturnRewardScanGuard.Decision.RECOVERY_FAILED,
                 guard.observe(
                         PostcardMatcher.Page.UNKNOWN,
-                        sameCenter,
+                        null,
                         WIDTH,
                         HEIGHT,
-                        true));
-        assertEquals(ReturnRewardScanGuard.Decision.TARGET_CONFIRMED,
-                guard.observe(
-                        PostcardMatcher.Page.UNKNOWN,
-                        sameCenter,
-                        WIDTH,
-                        HEIGHT,
-                        true));
+                        true,
+                        true,
+                        false));
     }
 
     private static ReturnRewardDetector.Target target(int x, int y) {
-        return new ReturnRewardDetector.Target(x, y, 110, 130, 0.8f);
+        return target(x, y, 110, 130);
+    }
+
+    private static ReturnRewardDetector.Target target(
+            int x, int y, int width, int height) {
+        return new ReturnRewardDetector.Target(x, y, width, height, 0.8f);
     }
 }

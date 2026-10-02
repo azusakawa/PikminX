@@ -101,7 +101,6 @@ public final class PetalAccessibilityService extends AccessibilityService {
     private static final long RETURN_REWARD_AFTER_TAP_DELAY_MILLIS = 1000L;
     private static final long RETURN_REWARD_FRAME_HIDE_DELAY_MILLIS = 50L;
     private static final long RETURN_REWARD_SETTLE_MILLIS = 1500L;
-    private static final long RETURN_REWARD_PERSISTENT_TARGET_REARM_MILLIS = 3000L;
     private static final long RETURN_REWARD_TIMEOUT_MILLIS = 5 * 60 * 1000L;
     private static final int RETURN_REWARD_REQUIRED_WARNING_FRAMES = 2;
     private static final long FEED_OCR_RETRY_MILLIS = 500L;
@@ -133,6 +132,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
     private static final int FEED_HOLD_REQUIRED_STABLE_READS = 3;
     private static final int FEED_SPIRAL_SEGMENTS = 160;
     private static final int FEED_REQUIRED_BLOOM_TARGET_FRAMES = 2;
+    private static final int FEED_RECENT_EFFECT_EXCLUSION_FRAMES = 4;
     private static final int FEED_MAX_BLOOM_TARGET_MISSING_FRAMES = 8;
     private static final int FEED_DETAIL_RETURN_FRAMES = 6;
     // 搜尋框、鍵盤與 Unity 清單都有轉場動畫；每個搜尋步驟先等一秒。
@@ -367,6 +367,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
     private FeedScreenAnalyzer.BloomTarget feedBloomCandidate;
     private int feedBloomCandidateFrames;
     private int feedBloomMissingFrames;
+    private int feedRecentEffectExclusionFrames;
     private long feedHarvestReceiptWindowStartedAt;
     private long feedHarvestLastReceiptAt;
     private int feedSpiralGestureGain;
@@ -2824,7 +2825,15 @@ public final class PetalAccessibilityService extends AccessibilityService {
                     if (stability == ObservationStability.Result.STABLE) {
                         feedReadyStability.reset();
                         feedNectarOpenAttempts = 0;
-                        if (!listConfirmed) {
+                        FeedScreenAnalyzer.NectarPanelAction panelAction =
+                                FeedScreenAnalyzer.nextNectarPanelAction(
+                                        panelOpen,
+                                        listConfirmed,
+                                        searchControlVisible,
+                                        feedRequireNectarSearch,
+                                        detailOpen,
+                                        searchInputActive);
+                        if (panelAction == FeedScreenAnalyzer.NectarPanelAction.WAIT) {
                             actionAdmissionEpoch++;
                             Log.i(TAG, "FEED_NECTAR_LIST event=not-confirmed"
                                     + " target=" + FeedScreenAnalyzer.nectarDisplayName(
@@ -2844,7 +2853,8 @@ public final class PetalAccessibilityService extends AccessibilityService {
                                         : selection.x() + "," + selection.tapY())
                                 + " candidateCount=" + visibleCandidates.size()
                                 + " searchControlVisible=" + searchControlVisible);
-                        if (!feedRequireNectarSearch) {
+                        if (panelAction
+                                == FeedScreenAnalyzer.NectarPanelAction.SELECT_VISIBLE) {
                             feedStep = FeedStep.SELECTING_NECTAR;
                         } else {
                             Log.i(TAG, "FEED_NECTAR_SELECTION event=search-required"
@@ -3301,6 +3311,19 @@ public final class PetalAccessibilityService extends AccessibilityService {
             feedBloomCandidateFrames = 0;
             return false;
         }
+        boolean excludeRecentFeedEffect = feedRecentEffectExclusionFrames > 0;
+        if (feedRecentEffectExclusionFrames > 0) {
+            feedRecentEffectExclusionFrames--;
+        }
+        if (FeedScreenAnalyzer.nearestHarvestBloomTarget(
+                List.of(target), width, height, excludeRecentFeedEffect) == null) {
+            feedBloomCandidate = null;
+            feedBloomCandidateFrames = 0;
+            statusFeed(getString(R.string.status_feed_collect_target_confirming, 0,
+                    FEED_REQUIRED_BLOOM_TARGET_FRAMES));
+            schedule(FEED_COLLECT_SCAN_MILLIS);
+            return true;
+        }
         feedReadyMissingFrames = 0;
         if (FeedScreenAnalyzer.isSameBloomTarget(
                 feedBloomCandidate, target, width, height)) {
@@ -3365,28 +3388,6 @@ public final class PetalAccessibilityService extends AccessibilityService {
         }
     }
 
-    private boolean hasConfirmedFeedNectarList(
-            List<PetalMatcher.Token> tokens, Bitmap bitmap) {
-        if (hasFocusedGameEditableText()) {
-            return false;
-        }
-        FeedScreenAnalyzer.NectarSearchAnalysis analysis =
-                FeedScreenAnalyzer.analyzeVisibleNectarList(
-                        tokens,
-                        feedTargetFlower,
-                        bitmap.getWidth(),
-                        bitmap.getHeight(),
-                        bitmap::getPixel);
-        if (analysis.selection() != null) {
-            return true;
-        }
-        return !FeedScreenAnalyzer.findVisibleNectarCandidates(
-                tokens,
-                feedTargetFlower,
-                bitmap.getWidth(),
-                bitmap.getHeight()).isEmpty();
-    }
-
     private void openFeedNectarSearch(List<PetalMatcher.Token> tokens, Bitmap bitmap) {
         int width = bitmap.getWidth();
         int height = bitmap.getHeight();
@@ -3394,12 +3395,21 @@ public final class PetalAccessibilityService extends AccessibilityService {
                 width, height, bitmap::getPixel);
         CardHighlight.Point search = searchAnalysis.searchButton();
         if (search != null) {
-            if (!hasConfirmedFeedNectarList(tokens, bitmap)) {
+            FeedScreenAnalyzer.NectarPanelAction panelAction =
+                    FeedScreenAnalyzer.nextNectarPanelAction(
+                            FeedScreenAnalyzer.isNectarPanelVisualOpen(
+                                    width, height, bitmap::getPixel),
+                            false,
+                            true,
+                            true,
+                            FeedScreenAnalyzer.isPikminDetailOpen(tokens),
+                            hasFocusedGameEditableText());
+            if (panelAction != FeedScreenAnalyzer.NectarPanelAction.OPEN_SEARCH) {
                 actionAdmissionEpoch++;
                 feedStep = FeedStep.OPENING_NECTAR;
                 feedSearchOpenConfirmationFrames = 0;
                 Log.i(TAG, "[FEED-PANEL] event=search-guard-rejected"
-                        + " reason=nectar-list-not-confirmed"
+                        + " reason=panel-or-search-not-confirmed"
                         + " bitmap=" + width + "x" + height);
                 schedule(FEED_OCR_RETRY_MILLIS);
                 return;
@@ -3961,6 +3971,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
         feedBloomCandidate = null;
         feedBloomCandidateFrames = 0;
         feedBloomMissingFrames = 0;
+        feedRecentEffectExclusionFrames = FEED_RECENT_EFFECT_EXCLUSION_FRAMES;
         feedHarvestReceiptWindowStartedAt = 0L;
         feedHarvestLastReceiptAt = 0L;
         feedSpiralGestureGain = 0;
@@ -3989,15 +4000,23 @@ public final class PetalAccessibilityService extends AccessibilityService {
                 bitmap.getWidth(),
                 bitmap.getHeight(),
                 bitmap::getPixel);
+        boolean excludeRecentFeedEffect = feedRecentEffectExclusionFrames > 0;
+        if (feedRecentEffectExclusionFrames > 0) {
+            feedRecentEffectExclusionFrames--;
+        }
         FeedScreenAnalyzer.BloomTarget target =
-                FeedScreenAnalyzer.nearestBloomTargetToCenter(
-                        targets, bitmap.getWidth(), bitmap.getHeight());
+                FeedScreenAnalyzer.nearestHarvestBloomTarget(
+                        targets,
+                        bitmap.getWidth(),
+                        bitmap.getHeight(),
+                        excludeRecentFeedEffect);
         if (target == null) {
             feedBloomCandidate = null;
             feedBloomCandidateFrames = 0;
             feedBloomMissingFrames++;
             logFeedSpiral("target-missing",
                     "frame=" + feedBloomMissingFrames
+                            + " recentEffectExcluded=" + excludeRecentFeedEffect
                             + " max=" + FEED_MAX_BLOOM_TARGET_MISSING_FRAMES);
             if (feedBloomMissingFrames >= FEED_MAX_BLOOM_TARGET_MISSING_FRAMES) {
                 stopWithError(getString(R.string.status_feed_collect_target_missing));
@@ -4040,7 +4059,9 @@ public final class PetalAccessibilityService extends AccessibilityService {
         FeedScreenAnalyzer.BloomTarget localTarget = new FeedScreenAnalyzer.BloomTarget(
                 screenTarget.x() - bounds.left,
                 screenTarget.y() - bounds.top,
-                feedBloomCandidate.score());
+                feedBloomCandidate.score(),
+                feedBloomCandidate.width(),
+                feedBloomCandidate.height());
         dispatchFeedSpiralHarvest(bounds, localTarget);
     }
 
@@ -7376,11 +7397,12 @@ public final class PetalAccessibilityService extends AccessibilityService {
         ReturnRewardDetector.SquadCloseup squadCloseup =
                 ReturnRewardDetector.classifySquadCloseup(
                         width, height, bitmap::getPixel);
-        boolean squadCloseupConfirmed = pikminDetailOpen
-                || squadCloseup == ReturnRewardDetector.SquadCloseup.SQUAD_CLOSEUP;
+        boolean squadCloseupConfirmed = !pikminDetailOpen
+                && squadCloseup == ReturnRewardDetector.SquadCloseup.SQUAD_CLOSEUP;
         boolean squadCloseupUnknown = !pikminDetailOpen
                 && squadCloseup == ReturnRewardDetector.SquadCloseup.UNKNOWN;
-        ReturnRewardDetector.Target rewardTarget = squadCloseupConfirmed
+        ReturnRewardDetector.Target rewardTarget = pikminDetailOpen
+                || squadCloseupConfirmed
                 || squadCloseupUnknown
                 ? null : detectedRewardTarget;
 
@@ -7427,8 +7449,6 @@ public final class PetalAccessibilityService extends AccessibilityService {
             schedule(RETURN_REWARD_SETTLE_MILLIS - sinceTap);
             return;
         }
-        boolean persistentTargetRearmEligible = returnRewardLastTapAt > 0
-                && sinceTap >= RETURN_REWARD_PERSISTENT_TARGET_REARM_MILLIS;
         PostcardMatcher.Page guardPage = squadCloseupUnknown
                 ? PostcardMatcher.Page.UNKNOWN : postcardPage;
         ReturnRewardScanGuard.Decision decision = returnRewardScanGuard.observe(
@@ -7436,11 +7456,32 @@ public final class PetalAccessibilityService extends AccessibilityService {
                 rewardTarget,
                 width,
                 height,
-                persistentTargetRearmEligible,
+                pikminDetailOpen,
                 squadCloseupConfirmed,
-                squadCloseup == ReturnRewardDetector.SquadCloseup.NOT_SQUAD_CLOSEUP);
+                !pikminDetailOpen
+                        && squadCloseup == ReturnRewardDetector.SquadCloseup.NOT_SQUAD_CLOSEUP);
         if (decision == ReturnRewardScanGuard.Decision.TARGET_CONFIRMED) {
             handleReturnRewardTarget(rewardTarget, width, height);
+            return;
+        }
+        if (decision == ReturnRewardScanGuard.Decision.DETAIL_RECOVERY) {
+            returnRewardLastTapAt = android.os.SystemClock.elapsedRealtime();
+            setReturnRewardStatus(getString(R.string.status_return_reward_waiting));
+            if (!performGameGlobalAction(GLOBAL_ACTION_BACK)) {
+                stopWithError(getString(R.string.status_return_reward_gesture_failed));
+            } else {
+                schedule(RETURN_REWARD_AFTER_TAP_DELAY_MILLIS);
+            }
+            return;
+        }
+        if (decision == ReturnRewardScanGuard.Decision.RECOVERY_COMPLETE) {
+            returnRewardLastTapAt = 0L;
+            setReturnRewardStatus(getString(R.string.status_return_reward_waiting));
+            schedule(RETURN_REWARD_SCAN_DELAY_MILLIS);
+            return;
+        }
+        if (decision == ReturnRewardScanGuard.Decision.RECOVERY_FAILED) {
+            stopWithError(getString(R.string.status_return_reward_gesture_failed));
             return;
         }
         if (decision == ReturnRewardScanGuard.Decision.SQUAD_COMPLETE) {
