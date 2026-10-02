@@ -26,7 +26,9 @@ final class ReturnRewardDetector {
         boolean samePosition(Target other, int screenWidth, int screenHeight) {
             return other != null
                     && Math.abs(x - other.x) <= screenWidth * 0.05f
-                    && Math.abs(y - other.y) <= screenHeight * 0.04f;
+                    && Math.abs(y - other.y) <= screenHeight * 0.04f
+                    && Math.abs(width - other.width) <= Math.max(8, screenWidth * 0.05f)
+                    && Math.abs(height - other.height) <= Math.max(8, screenHeight * 0.04f);
         }
     }
 
@@ -106,6 +108,7 @@ final class ReturnRewardDetector {
 
             int componentWidth = (maxX - minX + 1) * step;
             int componentHeight = (maxY - minY + 1) * step;
+            boolean clippedHorizontally = minX == 0 || maxX == gridWidth - 1;
             float fill = count / (float) Math.max(
                     1, (maxX - minX + 1) * (maxY - minY + 1));
             float areaRatio = count * step * step / (float) Math.max(1, width * height);
@@ -117,6 +120,10 @@ final class ReturnRewardDetector {
                     || componentWidth > width * 0.56f
                     || componentHeight < height * 0.045f
                     || componentHeight > height * 0.26f
+                    // Legacy default scans preserve edge-clipped fruit. An armed ROI is
+                    // centered on the user's tap, so a narrow edge component is not the item.
+                    || ((region != null || !clippedHorizontally)
+                            && componentWidth < componentHeight * 0.50f)
                     || (componentWidth > width * 0.38f
                             && componentHeight < height * 0.085f)
                     // Wide sparse foreground is the crowded squad, not one reward object.
@@ -189,22 +196,34 @@ final class ReturnRewardDetector {
         if (tokens == null || width <= 0 || height <= 0) {
             return false;
         }
-        boolean nectar = false;
-        boolean capacity = false;
-        boolean full = false;
-        for (PetalMatcher.Token token : tokens) {
-            if (token.centerX() < width * 0.10f
-                    || token.centerX() > width * 0.90f
-                    || token.centerY() < height * 0.35f
-                    || token.centerY() > height * 0.85f) {
+        for (PetalMatcher.Token anchor : tokens) {
+            if (!isNectarWarningRegion(anchor, width, height)) {
                 continue;
             }
-            String text = PetalMatcher.normalize(token.text());
-            nectar |= text.contains("精華");
-            capacity |= text.contains("攜帶") || text.contains("空間");
-            full |= text.contains("滿");
+            StringBuilder nearbyText = new StringBuilder();
+            for (PetalMatcher.Token token : tokens) {
+                if (isNectarWarningRegion(token, width, height)
+                        && Math.abs(token.centerX() - anchor.centerX()) <= width * 0.35f
+                        && Math.abs(token.centerY() - anchor.centerY()) <= height * 0.08f) {
+                    nearbyText.append(PetalMatcher.normalize(token.text()));
+                }
+            }
+            String text = nearbyText.toString();
+            if (text.contains("精華")
+                    && (text.contains("攜帶") || text.contains("空間"))
+                    && text.contains("滿")) {
+                return true;
+            }
         }
-        return nectar && capacity && full;
+        return false;
+    }
+
+    private static boolean isNectarWarningRegion(
+            PetalMatcher.Token token, int width, int height) {
+        return token.centerX() >= width * 0.10f
+                && token.centerX() <= width * 0.90f
+                && token.centerY() >= height * 0.35f
+                && token.centerY() <= height * 0.85f;
     }
 
     private static void enqueue(

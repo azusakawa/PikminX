@@ -207,6 +207,22 @@ public final class PetalAccessibilityServiceWorkflowTest {
         assertEquals(1, harness.gestureCount());
     }
 
+    @Test
+    public void returnRewardTargetFromOlderCaptureCannotAuthorizeTap() {
+        ServiceWorkflowHarness harness = new ServiceWorkflowHarness();
+        harness.start();
+        ActionAdmission.FrameContext targetFrame = harness.completeOcr(
+                harness.startOcr(harness.capture()));
+        assertNotNull(harness.completeOcr(harness.startOcr(harness.capture())));
+
+        assertFalse(harness.tryGesture(targetFrame));
+        assertEquals(0, harness.gestureCount());
+        ActionAdmission.FrameContext freshFrame = harness.completeOcr(
+                harness.startOcr(harness.capture()));
+        assertTrue(harness.tryGesture(freshFrame));
+        assertEquals(1, harness.gestureCount());
+    }
+
     private static final class ServiceWorkflowHarness {
         private record Capture(
                 long generation,
