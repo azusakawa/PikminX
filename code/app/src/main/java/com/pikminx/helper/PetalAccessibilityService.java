@@ -269,12 +269,15 @@ public final class PetalAccessibilityService extends AccessibilityService {
     private int dispatchSelectionTargetCount;
     private int dispatchSelectionBeforeCount = -1;
     private boolean dispatchSelectionGesturePending;
-    private boolean dispatchReturnRevealPending;
     private int dispatchAutoTapAttempts;
     private int dispatchAutoResultMissingFrames;
     private int dispatchAutoAnchorMissingFrames;
     private int dispatchUnknownFrames;
     private final ReturnRewardScanGuard returnRewardScanGuard = new ReturnRewardScanGuard();
+    private final ReturnRewardPostcardGuard returnRewardPostcardGuard =
+            new ReturnRewardPostcardGuard();
+    private final ReturnRewardSceneStability returnRewardSceneStability =
+            new ReturnRewardSceneStability();
     private final ReturnRewardRoi returnRewardRoi = new ReturnRewardRoi();
     private final Runnable returnRewardAnchorGuardTask = this::guardReturnRewardAnchor;
     private View returnRewardAnchorOverlay;
@@ -290,6 +293,8 @@ public final class PetalAccessibilityService extends AccessibilityService {
     private int returnRewardPostcardConfirmations;
     private int returnRewardPostcardAttempts;
     private boolean returnRewardWaitingPostcardExit;
+    private boolean returnRewardControlOcrRequested;
+    private boolean returnRewardControlOcrStrongEvidence;
     private String currentFlower = "";
     private AutomationStep automationStep = AutomationStep.MONITORING;
     private String targetFlower = "";
@@ -1395,7 +1400,6 @@ public final class PetalAccessibilityService extends AccessibilityService {
         dispatchSelectionTargetCount = 0;
         dispatchSelectionBeforeCount = -1;
         dispatchSelectionGesturePending = false;
-        dispatchReturnRevealPending = false;
         dispatchAutoTapAttempts = 0;
         dispatchAutoResultMissingFrames = 0;
         dispatchAutoAnchorMissingFrames = 0;
@@ -1438,6 +1442,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
                 this, UsageTelemetryClient.Operation.RETURN_REWARD, 1,
                 currentRemoteConfigVersion());
         returnRewardScanGuard.reset();
+        returnRewardSceneStability.reset();
         clearReturnRewardRoiOverlays();
         returnRewardRoi.reset();
         returnRewardStartedAt = 0L;
@@ -1448,13 +1453,18 @@ public final class PetalAccessibilityService extends AccessibilityService {
         returnRewardNectarWarningActive = false;
         resetReturnRewardPostcard();
         renderWorkflowStarted();
+        CaptureGeometry.Bounds safeGameBounds = captureBounds(gameBounds);
+        if (returnRewardRoi.armFromGameBounds(safeGameBounds)) {
+            beginReturnRewardScanning();
+            return;
+        }
         setStatus(getString(R.string.status_return_reward_select_roi));
         setRunStatus(
                 AutomationMode.RETURN_REWARD,
                 OverlayRunStatus.Kind.RECOGNIZING,
                 getString(R.string.status_return_reward_select_roi),
                 getString(R.string.overlay_return_reward_safety));
-        showReturnRewardAnchorOverlay(captureBounds(gameBounds));
+        showReturnRewardAnchorOverlay(safeGameBounds);
     }
 
     /** Blocks reward scanning until the user's first post-start tap defines the ROI. */
@@ -1511,6 +1521,10 @@ public final class PetalAccessibilityService extends AccessibilityService {
                         screenX, screenY, captureBounds(activeBounds))) {
             return;
         }
+        beginReturnRewardScanning();
+    }
+
+    private void beginReturnRewardScanning() {
         handler.removeCallbacks(returnRewardAnchorGuardTask);
         safeRemoveOverlayView(returnRewardAnchorOverlay, "return-reward-anchor");
         returnRewardAnchorOverlay = null;
@@ -1521,6 +1535,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
         returnRewardStartedAt = android.os.SystemClock.elapsedRealtime();
         returnRewardLastTapAt = 0L;
         returnRewardScanGuard.reset();
+        returnRewardSceneStability.reset();
         setStatus(getString(R.string.status_return_reward_roi_selected));
         setRunStatus(
                 AutomationMode.RETURN_REWARD,
@@ -1636,6 +1651,11 @@ public final class PetalAccessibilityService extends AccessibilityService {
                             ? R.string.status_feed_wrong_page
                             : R.string.status_reward_left_game;
             stopWithError(getString(message));
+            return;
+        }
+        if (automationMode == AutomationMode.RETURN_REWARD
+                && !returnRewardRoi.matchesGameBounds(captureBounds(strictBounds))) {
+            stopWithError(getString(R.string.status_return_reward_roi_failed));
             return;
         }
         if (!isGameForeground()) {
@@ -1991,6 +2011,51 @@ public final class PetalAccessibilityService extends AccessibilityService {
                 && expeditionDispatchSession.stage() == ExpeditionDispatchSession.Stage.LIST_SEARCH
                 && !expeditionDispatchSession.transitionPending()) {
             scanDispatchVisualCandidates(bitmap, captureGeometry, generation, request.admissionEpoch());
+            return;
+        }
+        if (automationMode == AutomationMode.RETURN_REWARD
+                && returnRewardControlOcrRequested) {
+            boolean precedingStrongEvidence = returnRewardControlOcrStrongEvidence;
+            returnRewardControlOcrRequested = false;
+            returnRewardControlOcrStrongEvidence = false;
+            ScreenCoordinateTransform.ScreenshotRect controlRegion =
+                    returnRewardRoi.postcardOcrRegion(captureGeometry);
+            if (controlRegion == null) {
+                busy = false;
+                bitmap.recycle();
+                stopWithError(getString(R.string.status_return_reward_roi_failed));
+                return;
+            }
+            int bitmapWidth = bitmap.getWidth();
+            int bitmapHeight = bitmap.getHeight();
+            OcrFailureConsumer controlFailure = error -> {
+                recordOcrDiagnosticFailure(
+                        "return-postcard-controls",
+                        OcrScan.Profile.TARGETED_CHINESE,
+                        captureGeometry,
+                        error);
+                handleReturnRewardFocusedControlMissing();
+            };
+            startOcrTransaction(
+                    bitmap,
+                    OcrScan.Profile.TARGETED_CHINESE,
+                    captureGeometry,
+                    request.admissionEpoch(),
+                    "return-postcard-controls",
+                    true,
+                    (ocrTransaction, frame) -> {
+                        recordOcrDiagnostic("return-postcard-controls", frame);
+                        runWithActionContext(
+                                ocrTransaction,
+                                frame,
+                                () -> handleReturnRewardFocusedControlTokens(
+                                        frame.tokens(),
+                                        bitmapWidth,
+                                        bitmapHeight,
+                                        precedingStrongEvidence));
+                    },
+                    controlFailure,
+                    controlRegion);
             return;
         }
         OcrScan.Profile profile = ocrProfileForCurrentStep();
@@ -4711,6 +4776,10 @@ public final class PetalAccessibilityService extends AccessibilityService {
         ExpeditionScreenAnalyzer.Screen screen = ExpeditionScreenAnalyzer.classifyWithBaseScreen(
                 ocrScreen, tokens, bitmap.getWidth(), bitmap.getHeight(), bitmap::getPixel);
         ExpeditionDispatchSession.Stage previousStage = expeditionDispatchSession.stage();
+        ExpeditionScreenAnalyzer.Point resultClose =
+                previousStage == ExpeditionDispatchSession.Stage.SELECTION
+                                || previousStage == ExpeditionDispatchSession.Stage.WAIT_RESULT
+                        ? ExpeditionScreenAnalyzer.findResultClose(bitmap) : null;
         int previousDetailTapAttempts = previousStage == ExpeditionDispatchSession.Stage.DETAIL
                 ? expeditionDispatchSession.detailTapAttempts() : 0;
         if ((previousStage == ExpeditionDispatchSession.Stage.WAIT_RESULT
@@ -4719,11 +4788,11 @@ public final class PetalAccessibilityService extends AccessibilityService {
             // The existing VERIFY_RETURN confirmation requires this strong OCR result twice.
             screen = ExpeditionScreenAnalyzer.Screen.EXPLORE_LIST;
         }
-        expeditionDispatchSession.advanceForVerifiedScreen(screen, now);
+        expeditionDispatchSession.advanceForVerifiedScreen(screen, resultClose != null, now);
         if (previousStage == ExpeditionDispatchSession.Stage.SELECTION
                 && (screen == ExpeditionScreenAnalyzer.Screen.UNKNOWN
                         || screen == ExpeditionScreenAnalyzer.Screen.RESULT)
-                && ExpeditionScreenAnalyzer.findResultClose(bitmap) != null) {
+                && resultClose != null) {
             if (expeditionDispatchSession.observePostGo(
                     true, frame.captureGeometry().captureSequence(), now)
                     && usageSession != null) {
@@ -4770,7 +4839,8 @@ public final class PetalAccessibilityService extends AccessibilityService {
             case LIST_SEARCH -> handleDispatchList(frame, bitmap, screen, now);
             case DETAIL -> handleDispatchDetail(tokens, bitmap, screen, now);
             case SELECTION -> handleDispatchSelection(tokens, bitmap, screen, now);
-            case WAIT_RESULT -> handleDispatchResult(tokens, bitmap, screen, now);
+            case WAIT_RESULT -> handleDispatchResult(
+                    resultClose, frame.captureGeometry().captureSequence(), now);
             case VERIFY_RETURN -> handleDispatchReturn(tokens, screen, now);
         }
     }
@@ -4900,10 +4970,6 @@ public final class PetalAccessibilityService extends AccessibilityService {
                             long signature = ExpeditionVision.viewportSignature(detected, (x, y) -> pixels[y * width + x]);
                             boolean expanded = ExpeditionScreenAnalyzer.isExplorePanelExpanded(
                                     frame.tokens(), width, height);
-                            if (dispatchReturnRevealPending) {
-                                scrollDispatchList(detected, signature, false, true);
-                                return;
-                            }
                             long priorEpoch = expeditionDispatchSession.viewportEpoch();
                             ExpeditionDispatchSession.ListDecision decision = expeditionDispatchSession.observeList(
                                     geometry.captureSequence(), signature,
@@ -5440,11 +5506,33 @@ public final class PetalAccessibilityService extends AccessibilityService {
     }
 
     private void handleDispatchResult(
-            List<PetalMatcher.Token> tokens,
-            Bitmap bitmap,
-            ExpeditionScreenAnalyzer.Screen screen,
+            ExpeditionScreenAnalyzer.Point close,
+            long capture,
             long now) {
         if (expeditionDispatchSession.transitionPending()) {
+            ExpeditionDispatchSession.ResultCloseDecision decision =
+                    expeditionDispatchSession.observePendingResultClose(
+                            close != null, capture, now);
+            if (decision != ExpeditionDispatchSession.ResultCloseDecision.WAIT) {
+                ExpeditionDispatchSession.Confirmation persistent =
+                        expeditionDispatchSession.confirm(
+                                "RESULT_CLOSE_PERSISTED:"
+                                        + expeditionDispatchSession.resultCloseAttempts(), now);
+                if (!handleDispatchConfirmation(persistent)) {
+                    if (persistent != ExpeditionDispatchSession.Confirmation.STAGE_TIMEOUT) {
+                        waitForDispatchFrame(getString(R.string.status_reward_closing_result));
+                    }
+                    return;
+                }
+                if (decision == ExpeditionDispatchSession.ResultCloseDecision.EXHAUSTED) {
+                    Log.i(TAG, "EXPEDITION_RESULT_CLOSE action=EXHAUSTED attempts="
+                            + expeditionDispatchSession.resultCloseAttempts());
+                    stopWithError(getString(R.string.status_reward_result_close_failed));
+                    return;
+                }
+                dispatchResultCloseTap(close, capture, now);
+                return;
+            }
             ExpeditionDispatchSession.Confirmation timeout =
                     expeditionDispatchSession.confirm("", now);
             if (!handleDispatchConfirmation(timeout)) {
@@ -5452,7 +5540,6 @@ public final class PetalAccessibilityService extends AccessibilityService {
             }
             return;
         }
-        ExpeditionScreenAnalyzer.Point close = ExpeditionScreenAnalyzer.findResultClose(bitmap);
         if (close == null) {
             ExpeditionDispatchSession.Confirmation timeout = expeditionDispatchSession.confirm("", now);
             if (!handleDispatchConfirmation(timeout)) {
@@ -5466,8 +5553,18 @@ public final class PetalAccessibilityService extends AccessibilityService {
             waitForDispatchFrame(getString(R.string.status_reward_waiting_result));
             return;
         }
-        expeditionDispatchSession.beginTransition(now);
-        Log.i(TAG, "EXPEDITION_RESULT_CLOSE action=TAP x=" + close.x() + " y=" + close.y());
+        dispatchResultCloseTap(close, capture, now);
+    }
+
+    private void dispatchResultCloseTap(
+            ExpeditionScreenAnalyzer.Point close, long capture, long now) {
+        if (!expeditionDispatchSession.beginResultCloseAttempt(capture, now)) {
+            stopWithError(getString(R.string.status_reward_result_close_failed));
+            return;
+        }
+        Log.i(TAG, "EXPEDITION_RESULT_CLOSE action=TAP attempt="
+                + expeditionDispatchSession.resultCloseAttempts()
+                + " x=" + close.x() + " y=" + close.y());
         dispatchActionTap(
                 close,
                 getString(R.string.status_reward_closing_result),
@@ -5509,7 +5606,6 @@ public final class PetalAccessibilityService extends AccessibilityService {
         dispatchSelectionTargetCount = 0;
         dispatchSelectionBeforeCount = -1;
         dispatchSelectionGesturePending = false;
-        dispatchReturnRevealPending = true;
         dispatchAutoTapAttempts = 0;
         dispatchAutoResultMissingFrames = 0;
         dispatchAutoAnchorMissingFrames = 0;
@@ -5912,22 +6008,12 @@ public final class PetalAccessibilityService extends AccessibilityService {
         });
     }
 
-    private void scrollDispatchList(ExpeditionVision.Surface surface, long signature, boolean towardTop) {
-        scrollDispatchList(surface, signature, towardTop, false);
-    }
-
-    private void scrollDispatchList(ExpeditionVision.Surface surface, long signature,
-            boolean towardTop, boolean returnReveal) {
+    private void scrollDispatchList(
+            ExpeditionVision.Surface surface, long signature, boolean towardTop) {
         ExpeditionVision.Bounds content = surface.content();
         int upper = content.top() + content.height() / 4;
         int lower = content.bottom() - content.height() / 4;
-        if (returnReveal) {
-            // User-observed return behavior: one bounded finger-up drag from
-            // approximately 60% to 40% of the current full-screen capture.
-            int screenHeight = currentCaptureGeometry().bitmapHeight();
-            lower = screenHeight * 3 / 5;
-            upper = screenHeight * 2 / 5;
-        } else if (towardTop && surface.scrollbar() == null) {
+        if (towardTop && surface.scrollbar() == null) {
             // A long pull at the top can collapse the Expedition sheet. Without a
             // scrollbar, use the old short probe so repeated viewport evidence can
             // establish the boundary without changing the sheet state.
@@ -5945,19 +6031,10 @@ public final class PetalAccessibilityService extends AccessibilityService {
                 getString(R.string.status_reward_scrolling), getString(R.string.status_reward_scanning));
         dispatchPath(path, 720L, () -> {
             boolean atBottom = surface.scrollbar() != null && surface.scrollbar().atBottom();
-            if (returnReveal) {
-                dispatchReturnRevealPending = false;
-                expeditionDispatchSession.recordReturnRevealScroll(android.os.SystemClock.elapsedRealtime());
-                Log.i(TAG, "EXPEDITION_RETURN_REVEAL direction=UP range=60to40 signature=" + signature
-                        + " scrollbar=" + surface.scrollbar());
-            } else {
-                expeditionDispatchSession.recordListScroll(signature, atBottom);
-            }
+            expeditionDispatchSession.recordListScroll(signature, atBottom);
             if (expeditionTemplateMatcher != null) expeditionTemplateMatcher.clearObservationCache();
-            if (!returnReveal) {
-                Log.i(TAG, "EXPEDITION_SCROLL direction=" + (towardTop ? "TOP" : "DOWN")
-                        + " signature=" + signature + " scrollbar=" + surface.scrollbar());
-            }
+            Log.i(TAG, "EXPEDITION_SCROLL direction=" + (towardTop ? "TOP" : "DOWN")
+                    + " signature=" + signature + " scrollbar=" + surface.scrollbar());
             dispatchInspectedVisual.clear(); expeditionRecognitionConsensus.reset();
             busy = false; schedule(DISPATCH_AFTER_SCROLL_DELAY_MILLIS);
         }, () -> {
@@ -7268,6 +7345,48 @@ public final class PetalAccessibilityService extends AccessibilityService {
         return PetalMatcher.normalize(textValue + " " + descriptionValue + " " + hintValue);
     }
 
+    private PostcardMatcher.Target findReturnRewardPostcardControl(boolean receive) {
+        AccessibilityNodeInfo node = findGameNode(
+                candidate -> isReturnRewardPostcardControl(candidate, receive));
+        if (node == null) {
+            return null;
+        }
+        Rect bounds = new Rect();
+        node.getBoundsInScreen(bounds);
+        return new PostcardMatcher.Target(
+                receive ? "接收" : "捨棄", bounds.centerX(), bounds.centerY());
+    }
+
+    private boolean clickReturnRewardPostcardControl(boolean receive) {
+        return clickGameNode(node -> isReturnRewardPostcardControl(node, receive));
+    }
+
+    private boolean isReturnRewardPostcardControl(
+            AccessibilityNodeInfo node, boolean receive) {
+        if (node == null || !node.isVisibleToUser() || !node.isEnabled()
+                || !nodeLabelEquals(node, receive ? new String[]{"接收"}
+                        : new String[]{"捨棄", "舍棄"})) {
+            return false;
+        }
+        Rect bounds = new Rect();
+        node.getBoundsInScreen(bounds);
+        Rect gameBounds = activeGameBoundsStrict();
+        int centerX = bounds.centerX();
+        int centerY = bounds.centerY();
+        return gameBounds != null
+                && !bounds.isEmpty()
+                && centerX >= gameBounds.left
+                && centerX < gameBounds.right
+                && centerY >= gameBounds.top
+                && centerY < gameBounds.bottom;
+    }
+
+    private boolean hasReturnRewardPostcardTitle() {
+        return findGameNode(node -> node.isVisibleToUser()
+                && nodeLabel(node).contains(
+                        PetalMatcher.normalize("持有的明信片"))) != null;
+    }
+
     /** 依附圖中的 OCR 錨點驅動明信片流程，每次動作都等待下一張畫面確認。 */
     private void handleReturnRewardTarget(
             ReturnRewardDetector.Target target, int width, int height) {
@@ -7308,68 +7427,92 @@ public final class PetalAccessibilityService extends AccessibilityService {
                 stopWithError(getString(R.string.status_return_reward_timeout));
                 return;
             }
-        PostcardMatcher.Page postcardPage = PostcardMatcher.detectPage(tokens, width, height);
-        boolean postcardVisible = postcardPage == PostcardMatcher.Page.POSTCARD_RECEIVED;
-        if (postcardVisible
-                && returnRewardScanGuard.observe(postcardPage, null, width, height)
-                        == ReturnRewardScanGuard.Decision.POSTCARD) {
-            PostcardMatcher.Target target = returnRewardReceivePostcard
-                    ? PostcardMatcher.findReceive(tokens)
-                    : PostcardMatcher.findDiscard(tokens, width, height);
-            if (target == null) {
-                returnRewardPostcardTarget = null;
-                returnRewardPostcardConfirmations = 0;
-                schedule(RETURN_REWARD_SCAN_DELAY_MILLIS);
-                return;
-            }
-            if (returnRewardPostcardTarget != null
-                    && Math.abs(target.x() - returnRewardPostcardTarget.x()) <= width * 0.04f
-                    && Math.abs(target.y() - returnRewardPostcardTarget.y()) <= height * 0.025f) {
-                returnRewardPostcardConfirmations++;
-            } else {
-                returnRewardPostcardTarget = target;
-                returnRewardPostcardConfirmations = 1;
-            }
-            if (returnRewardPostcardConfirmations < 2) {
-                setReturnRewardStatus(getString(returnRewardReceivePostcard
-                        ? R.string.status_return_reward_postcard_receive
-                        : R.string.status_return_reward_postcard_discard));
-                schedule(RETURN_REWARD_SCAN_DELAY_MILLIS);
-                return;
-            }
-            if (returnRewardPostcardAttempts >= MAX_ACTION_ATTEMPTS) {
-                stopWithError(getString(R.string.status_return_reward_postcard_missing));
-                return;
-            }
-            returnRewardPostcardAttempts++;
-            returnRewardPostcardTarget = null;
-            returnRewardPostcardConfirmations = 0;
-            returnRewardWaitingPostcardExit = true;
-            returnRewardLastTapAt = android.os.SystemClock.elapsedRealtime();
-            setReturnRewardStatus(getString(returnRewardReceivePostcard
-                    ? R.string.status_return_reward_postcard_receive
-                    : R.string.status_return_reward_postcard_discard));
-            dispatchTap(
-                    target.x(),
-                    target.y(),
-                    85L,
-                    () -> schedule(RETURN_REWARD_AFTER_TAP_DELAY_MILLIS),
-                    () -> {
-                        if (returnRewardPostcardAttempts >= MAX_ACTION_ATTEMPTS) {
-                            stopWithError(getString(R.string.status_return_reward_postcard_missing));
-                        } else {
-                            schedule(RETURN_REWARD_SCAN_DELAY_MILLIS);
-                        }
-                    });
-            return;
-        }
-
         ReturnRewardDetector.Region rewardRegion =
                 returnRewardRoi.detectorRegion(currentCaptureGeometry());
         if (rewardRegion == null) {
             stopWithError(getString(R.string.status_return_reward_roi_failed));
             return;
         }
+        PostcardMatcher.Page postcardPage =
+                PostcardMatcher.detectPage(tokens, width, height, rewardRegion);
+        boolean postcardTitleSemantic = hasReturnRewardPostcardTitle();
+        boolean postcardText = PostcardMatcher.hasPostcardText(tokens, rewardRegion);
+        boolean postcardSendText =
+                PostcardMatcher.hasPostcardSendText(tokens, rewardRegion);
+        PostcardMatcher.Target receiveSemantic = findReturnRewardPostcardControl(true);
+        PostcardMatcher.Target discardSemantic = findReturnRewardPostcardControl(false);
+        PostcardMatcher.Target receiveOcr = PostcardMatcher.findReceive(tokens);
+        PostcardMatcher.Target discardOcr =
+                PostcardMatcher.findDiscard(tokens, width, height, rewardRegion);
+        PostcardMatcher.ReceiptEvidence rawPostcardEvidence =
+                PostcardMatcher.receiptEvidence(
+                        postcardPage,
+                        postcardTitleSemantic,
+                        postcardText,
+                        postcardSendText,
+                        receiveSemantic != null || receiveOcr != null,
+                        discardSemantic != null || discardOcr != null);
+        PostcardMatcher.ReceiptEvidence postcardEvidence =
+                returnRewardPostcardGuard.observeEvidence(rawPostcardEvidence);
+        PostcardMatcher.Target semanticTarget = returnRewardReceivePostcard
+                ? receiveSemantic : discardSemantic;
+        PostcardMatcher.Target ocrTarget = returnRewardReceivePostcard
+                ? receiveOcr : discardOcr;
+        PostcardMatcher.Target target = semanticTarget != null ? semanticTarget : ocrTarget;
+
+        if (returnRewardWaitingPostcardExit) {
+            if (postcardEvidence == PostcardMatcher.ReceiptEvidence.ABSENT) {
+                resetReturnRewardPostcard();
+                returnRewardLastTapAt = android.os.SystemClock.elapsedRealtime();
+                setReturnRewardStatus(getString(R.string.status_return_reward_waiting));
+                schedule(RETURN_REWARD_SCAN_DELAY_MILLIS);
+                return;
+            }
+            if (returnRewardPostcardGuard.unresolvedLimitReached(true)) {
+                if (returnRewardPostcardAttempts >= MAX_ACTION_ATTEMPTS) {
+                    stopWithError(getString(R.string.status_return_reward_postcard_missing));
+                    return;
+                }
+                returnRewardWaitingPostcardExit = false;
+                returnRewardPostcardTarget = null;
+                returnRewardPostcardConfirmations = 0;
+                returnRewardPostcardGuard.unresolvedLimitReached(false);
+            }
+            setReturnRewardStatus(getString(R.string.status_return_reward_waiting));
+            schedule(RETURN_REWARD_SCAN_DELAY_MILLIS);
+            return;
+        }
+
+        if (postcardEvidence != PostcardMatcher.ReceiptEvidence.ABSENT) {
+            returnRewardScanGuard.observe(
+                    PostcardMatcher.Page.POSTCARD_RECEIVED, null, width, height);
+            if (rawPostcardEvidence == PostcardMatcher.ReceiptEvidence.ABSENT) {
+                returnRewardPostcardTarget = null;
+                returnRewardPostcardConfirmations = 0;
+                setReturnRewardStatus(getString(R.string.status_return_reward_waiting));
+                schedule(RETURN_REWARD_SCAN_DELAY_MILLIS);
+                return;
+            }
+            if (rawPostcardEvidence != PostcardMatcher.ReceiptEvidence.PRESENT
+                    || target == null) {
+                returnRewardControlOcrRequested = true;
+                returnRewardControlOcrStrongEvidence =
+                        rawPostcardEvidence == PostcardMatcher.ReceiptEvidence.PRESENT;
+                setReturnRewardStatus(getString(returnRewardReceivePostcard
+                        ? R.string.status_return_reward_postcard_receive
+                        : R.string.status_return_reward_postcard_discard));
+                schedule(RETURN_REWARD_SCAN_DELAY_MILLIS);
+                return;
+            }
+            returnRewardPostcardGuard.unresolvedLimitReached(false);
+            handleReturnRewardPostcardAction(
+                    semanticTarget, ocrTarget, width, height);
+            return;
+        }
+        returnRewardPostcardGuard.unresolvedLimitReached(false);
+
+        boolean stableRewardScene = returnRewardSceneStability.observe(
+                width, height, bitmap::getPixel, rewardRegion);
         ReturnRewardDetector.Target detectedRewardTarget = ReturnRewardDetector.find(
                 width, height, bitmap::getPixel, rewardRegion);
         boolean pikminDetailOpen = FeedScreenAnalyzer.isPikminDetailOpen(tokens);
@@ -7412,13 +7555,6 @@ public final class PetalAccessibilityService extends AccessibilityService {
             return;
         }
 
-        if (returnRewardWaitingPostcardExit) {
-            resetReturnRewardPostcard();
-            returnRewardLastTapAt = android.os.SystemClock.elapsedRealtime();
-            setReturnRewardStatus(getString(R.string.status_return_reward_waiting));
-            schedule(RETURN_REWARD_SCAN_DELAY_MILLIS);
-            return;
-        }
         returnRewardPostcardTarget = null;
         returnRewardPostcardConfirmations = 0;
         long sinceTap = android.os.SystemClock.elapsedRealtime() - returnRewardLastTapAt;
@@ -7431,6 +7567,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
                 && sinceTap >= RETURN_REWARD_PERSISTENT_TARGET_REARM_MILLIS;
         PostcardMatcher.Page guardPage = squadCloseupUnknown
                 ? PostcardMatcher.Page.UNKNOWN : postcardPage;
+        boolean stableReturnScene = stableRewardScene && !squadCloseupUnknown;
         ReturnRewardScanGuard.Decision decision = returnRewardScanGuard.observe(
                 guardPage,
                 rewardTarget,
@@ -7438,7 +7575,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
                 height,
                 persistentTargetRearmEligible,
                 squadCloseupConfirmed,
-                squadCloseup == ReturnRewardDetector.SquadCloseup.NOT_SQUAD_CLOSEUP);
+                stableReturnScene);
         if (decision == ReturnRewardScanGuard.Decision.TARGET_CONFIRMED) {
             handleReturnRewardTarget(rewardTarget, width, height);
             return;
@@ -7462,6 +7599,142 @@ public final class PetalAccessibilityService extends AccessibilityService {
         }
     }
 
+    private void handleReturnRewardFocusedControlTokens(
+            List<PetalMatcher.Token> tokens,
+            int width,
+            int height,
+            boolean precedingStrongEvidence) {
+        if (returnRewardTimedOut()) {
+            stopWithError(getString(R.string.status_return_reward_timeout));
+            return;
+        }
+        if (activeGameBoundsStrict() == null) {
+            stopWithError(getString(R.string.status_return_reward_left_game));
+            return;
+        }
+        ReturnRewardDetector.Region rewardRegion =
+                returnRewardRoi.detectorRegion(currentCaptureGeometry());
+        if (rewardRegion == null) {
+            stopWithError(getString(R.string.status_return_reward_roi_failed));
+            return;
+        }
+        PostcardMatcher.Page postcardPage =
+                PostcardMatcher.detectPage(tokens, width, height, rewardRegion);
+        boolean postcardTitleSemantic = hasReturnRewardPostcardTitle();
+        boolean postcardText = PostcardMatcher.hasPostcardText(tokens, rewardRegion);
+        boolean postcardSendText =
+                PostcardMatcher.hasPostcardSendText(tokens, rewardRegion);
+        PostcardMatcher.Target receiveSemantic = findReturnRewardPostcardControl(true);
+        PostcardMatcher.Target discardSemantic = findReturnRewardPostcardControl(false);
+        PostcardMatcher.Target receiveOcr = PostcardMatcher.findReceive(tokens);
+        PostcardMatcher.Target discardOcr =
+                PostcardMatcher.findDiscardForConfirmedReceipt(tokens, width, height);
+        PostcardMatcher.ReceiptEvidence focusedEvidence = PostcardMatcher.receiptEvidence(
+                postcardPage,
+                postcardTitleSemantic,
+                postcardText,
+                postcardSendText,
+                receiveSemantic != null || receiveOcr != null,
+                discardSemantic != null || discardOcr != null);
+        PostcardMatcher.ReceiptEvidence stableFocusedEvidence =
+                returnRewardPostcardGuard.observeEvidence(focusedEvidence);
+        PostcardMatcher.Target semanticTarget = returnRewardReceivePostcard
+                ? receiveSemantic : discardSemantic;
+        PostcardMatcher.Target ocrTarget = returnRewardReceivePostcard
+                ? receiveOcr : discardOcr;
+        boolean targetAvailable = semanticTarget != null || ocrTarget != null;
+        if (stableFocusedEvidence == PostcardMatcher.ReceiptEvidence.ABSENT
+                || !PostcardMatcher.isFocusedControlActionable(
+                        focusedEvidence, precedingStrongEvidence, targetAvailable)) {
+            handleReturnRewardFocusedControlMissing();
+            return;
+        }
+        returnRewardPostcardGuard.unresolvedLimitReached(false);
+        handleReturnRewardPostcardAction(semanticTarget, ocrTarget, width, height);
+    }
+
+    private void handleReturnRewardFocusedControlMissing() {
+        if (!running || automationMode != AutomationMode.RETURN_REWARD) {
+            return;
+        }
+        returnRewardPostcardTarget = null;
+        returnRewardPostcardConfirmations = 0;
+        if (returnRewardPostcardGuard.unresolvedLimitReached(true)) {
+            stopWithError(getString(R.string.status_return_reward_postcard_missing));
+            return;
+        }
+        setReturnRewardStatus(getString(returnRewardReceivePostcard
+                ? R.string.status_return_reward_postcard_receive
+                : R.string.status_return_reward_postcard_discard));
+        schedule(RETURN_REWARD_SCAN_DELAY_MILLIS);
+    }
+
+    private void handleReturnRewardPostcardAction(
+            PostcardMatcher.Target semanticTarget,
+            PostcardMatcher.Target ocrTarget,
+            int width,
+            int height) {
+        PostcardMatcher.Target target = semanticTarget != null ? semanticTarget : ocrTarget;
+        if (returnRewardPostcardTarget != null
+                && Math.abs(target.x() - returnRewardPostcardTarget.x()) <= width * 0.04f
+                && Math.abs(target.y() - returnRewardPostcardTarget.y()) <= height * 0.025f) {
+            returnRewardPostcardConfirmations++;
+        } else {
+            returnRewardPostcardTarget = target;
+            returnRewardPostcardConfirmations = 1;
+        }
+        if (returnRewardPostcardConfirmations < 2) {
+            setReturnRewardStatus(getString(returnRewardReceivePostcard
+                    ? R.string.status_return_reward_postcard_receive
+                    : R.string.status_return_reward_postcard_discard));
+            schedule(RETURN_REWARD_SCAN_DELAY_MILLIS);
+            return;
+        }
+        if (returnRewardPostcardAttempts >= MAX_ACTION_ATTEMPTS) {
+            stopWithError(getString(R.string.status_return_reward_postcard_missing));
+            return;
+        }
+        returnRewardPostcardAttempts++;
+        returnRewardPostcardTarget = null;
+        returnRewardPostcardConfirmations = 0;
+        returnRewardWaitingPostcardExit = true;
+        returnRewardLastTapAt = android.os.SystemClock.elapsedRealtime();
+        setReturnRewardStatus(getString(returnRewardReceivePostcard
+                ? R.string.status_return_reward_postcard_receive
+                : R.string.status_return_reward_postcard_discard));
+        Runnable postcardTapFailed = () -> {
+            returnRewardWaitingPostcardExit = false;
+            returnRewardPostcardGuard.unresolvedLimitReached(false);
+            if (returnRewardPostcardAttempts >= MAX_ACTION_ATTEMPTS) {
+                stopWithError(getString(R.string.status_return_reward_postcard_missing));
+            } else {
+                schedule(RETURN_REWARD_SCAN_DELAY_MILLIS);
+            }
+        };
+        if (semanticTarget != null) {
+            if (clickReturnRewardPostcardControl(returnRewardReceivePostcard)) {
+                schedule(RETURN_REWARD_AFTER_TAP_DELAY_MILLIS);
+                return;
+            }
+            if (ocrTarget == null) {
+                dispatchScreenTap(
+                        semanticTarget.x(),
+                        semanticTarget.y(),
+                        85L,
+                        () -> schedule(RETURN_REWARD_AFTER_TAP_DELAY_MILLIS),
+                        postcardTapFailed);
+                return;
+            }
+            target = ocrTarget;
+        }
+        dispatchTap(
+                target.x(),
+                target.y(),
+                85L,
+                () -> schedule(RETURN_REWARD_AFTER_TAP_DELAY_MILLIS),
+                postcardTapFailed);
+    }
+
     private boolean returnRewardTimedOut() {
         return returnRewardStartedAt > 0
                 && android.os.SystemClock.elapsedRealtime() - returnRewardStartedAt
@@ -7478,6 +7751,9 @@ public final class PetalAccessibilityService extends AccessibilityService {
     }
 
     private void resetReturnRewardPostcard() {
+        returnRewardPostcardGuard.reset();
+        returnRewardControlOcrRequested = false;
+        returnRewardControlOcrStrongEvidence = false;
         returnRewardPostcardTarget = null;
         returnRewardPostcardConfirmations = 0;
         returnRewardPostcardAttempts = 0;
@@ -9217,7 +9493,6 @@ public final class PetalAccessibilityService extends AccessibilityService {
         dispatchSelectionTargetCount = 0;
         dispatchSelectionBeforeCount = -1;
         dispatchSelectionGesturePending = false;
-        dispatchReturnRevealPending = false;
         dispatchAutoTapAttempts = 0;
         dispatchAutoResultMissingFrames = 0;
         dispatchAutoAnchorMissingFrames = 0;
@@ -9225,6 +9500,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
         clearReturnRewardRoiOverlays();
         returnRewardRoi.reset();
         returnRewardScanGuard.reset();
+        returnRewardSceneStability.reset();
         returnRewardStartedAt = 0L;
         returnRewardLastTapAt = 0L;
         returnRewardContinueOnNectarWarning = false;

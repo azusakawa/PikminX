@@ -21,13 +21,40 @@ final class PostcardMatcher {
         UNKNOWN
     }
 
+    enum ReceiptEvidence {
+        PRESENT,
+        UNKNOWN,
+        ABSENT
+    }
+
     record Target(String text, int x, int y) {}
     record PetalPot(String name, int count, int x, int y) {}
 
     private static final Pattern SELECTED_COUNT = Pattern.compile("(\\d)\\s*/\\s*5");
 
     static Page detectPage(List<PetalMatcher.Token> tokens, int width, int height) {
-        if (hasText(tokens, "持有的明信片") && hasText(tokens, "接收")) {
+        return detectPage(tokens, width, height, hasText(tokens, "持有的明信片"));
+    }
+
+    static Page detectPage(
+            List<PetalMatcher.Token> tokens,
+            int width,
+            int height,
+            ReturnRewardDetector.Region returnRewardRegion) {
+        return detectPage(
+                tokens,
+                width,
+                height,
+                hasPostcardText(tokens, returnRewardRegion));
+    }
+
+    private static Page detectPage(
+            List<PetalMatcher.Token> tokens,
+            int width,
+            int height,
+            boolean postcardText) {
+        if (postcardText
+                && (hasText(tokens, "接收") || findDiscard(tokens) != null)) {
             return Page.POSTCARD_RECEIVED;
         }
         if (hasText(tokens, "選擇皮克敏出去取回明信片")
@@ -51,6 +78,62 @@ final class PostcardMatcher {
             return Page.MAP;
         }
         return Page.UNKNOWN;
+    }
+
+    static boolean hasPostcardText(
+            List<PetalMatcher.Token> tokens,
+            ReturnRewardDetector.Region returnRewardRegion) {
+        return hasTextInRegion(tokens, returnRewardRegion, "明信片");
+    }
+
+    static boolean hasPostcardSendText(
+            List<PetalMatcher.Token> tokens,
+            ReturnRewardDetector.Region returnRewardRegion) {
+        return hasTextInRegion(tokens, returnRewardRegion, "傳送", "传送");
+    }
+
+    static ReceiptEvidence receiptEvidence(
+            Page page,
+            boolean titleSemantic,
+            boolean postcardText,
+            boolean sendText,
+            boolean receiveControl,
+            boolean discardControl) {
+        boolean anyControl = receiveControl || discardControl;
+        if (page == Page.POSTCARD_RECEIVED
+                || titleSemantic && (sendText || anyControl)
+                || postcardText && (sendText || anyControl)
+                || receiveControl && discardControl) {
+            return ReceiptEvidence.PRESENT;
+        }
+        if (titleSemantic || postcardText || sendText || anyControl) {
+            return ReceiptEvidence.UNKNOWN;
+        }
+        return ReceiptEvidence.ABSENT;
+    }
+
+    static boolean isFocusedControlActionable(
+            ReceiptEvidence focusedEvidence,
+            boolean precedingStrongEvidence,
+            boolean targetAvailable) {
+        return targetAvailable
+                && (focusedEvidence == ReceiptEvidence.PRESENT
+                        || (focusedEvidence == ReceiptEvidence.UNKNOWN
+                                && precedingStrongEvidence));
+    }
+
+    static boolean isPostcardReceipt(
+            Page page,
+            boolean titleSemantic,
+            boolean receiveSemantic,
+            boolean discardSemantic) {
+        return receiptEvidence(
+                page,
+                titleSemantic,
+                false,
+                false,
+                receiveSemantic,
+                discardSemantic) == ReceiptEvidence.PRESENT;
     }
 
     static Target findUsePetals(List<PetalMatcher.Token> tokens) {
@@ -82,12 +165,37 @@ final class PostcardMatcher {
     }
 
     static Target findDiscard(List<PetalMatcher.Token> tokens, int width, int height) {
+        return findDiscard(tokens, width, height, detectPage(tokens, width, height));
+    }
+
+    static Target findDiscard(
+            List<PetalMatcher.Token> tokens,
+            int width,
+            int height,
+            ReturnRewardDetector.Region returnRewardRegion) {
+        return findDiscard(
+                tokens,
+                width,
+                height,
+                detectPage(tokens, width, height, returnRewardRegion));
+    }
+
+    static Target findDiscardForConfirmedReceipt(
+            List<PetalMatcher.Token> tokens, int width, int height) {
+        return findDiscard(tokens, width, height, Page.POSTCARD_RECEIVED);
+    }
+
+    private static Target findDiscard(
+            List<PetalMatcher.Token> tokens,
+            int width,
+            int height,
+            Page page) {
         Target discard = findDiscard(tokens);
         if (discard != null) {
             return discard;
         }
         Target receive = findReceive(tokens);
-        if (detectPage(tokens, width, height) != Page.POSTCARD_RECEIVED
+        if (page != Page.POSTCARD_RECEIVED
                 || receive == null
                 || receive.x() <= width * 0.50f
                 || receive.x() >= width * 0.92f
@@ -781,6 +889,29 @@ final class PostcardMatcher {
 
     private static boolean hasText(List<PetalMatcher.Token> tokens, String text) {
         return findText(tokens, text) != null;
+    }
+
+    private static boolean hasTextInRegion(
+            List<PetalMatcher.Token> tokens,
+            ReturnRewardDetector.Region region,
+            String... values) {
+        if (region == null) {
+            return false;
+        }
+        List<String> keys = new ArrayList<>();
+        for (String value : values) {
+            keys.add(normalize(value));
+        }
+        return tokens.stream().anyMatch(token -> {
+            if (token.centerX() < region.left()
+                    || token.centerX() >= region.right()
+                    || token.centerY() < region.top()
+                    || token.centerY() >= region.bottom()) {
+                return false;
+            }
+            String text = normalize(token.text());
+            return keys.stream().anyMatch(text::contains);
+        });
     }
 
     private static Target findExactText(List<PetalMatcher.Token> tokens, String text) {
