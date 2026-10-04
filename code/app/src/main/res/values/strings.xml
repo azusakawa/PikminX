@@ -213,6 +213,7 @@
     <string name="status_reward_tapping_go">皮克敏已選取，正在點擊 GO</string>
     <string name="status_reward_waiting_result">派遣已送出，正在確認結果頁</string>
     <string name="status_reward_closing_result">正在關閉派遣結果頁</string>
+    <string name="status_reward_result_close_failed">派遣結果頁關閉 3 次仍未返回探險清單，已停止</string>
     <string name="status_reward_returning">正在確認已回到探險清單</string>
     <string name="status_reward_return_reward_required">回程獎勵視窗阻擋探險，已停止；請先處理回程獎勵，再檢查並開始</string>
     <string name="status_reward_progress">已派遣 %1$d 次，繼續掃描剩餘目標</string>

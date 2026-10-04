@@ -1,12 +1,15 @@
-# B0 source tracking intentionally excludes generated and archived artifacts.
-/archives/
-/releases/
+/.gradle/
+/.idea/
+/temp/
+/apk/
+/device-evidence/
+/validation/
+/signing/
+/fresh-device.png
 /code/.gradle/
 /code/build/
 /code/app/build/
-/*.apk
-/device-*.png
-/*-window.xml
-/planting-*.png
-/pikminx-main-for-start.png
-/settings-*.png
+**/local.properties
+*.apk
+*.jks
+*.keystore

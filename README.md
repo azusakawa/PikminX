@@ -1,7 +1,34 @@
-# PikminX 2.0 series
+# PikminX 3.2.0
 
-This folder contains the 2.x PikminX source, release APKs and inspection
-artifacts. The root Gradle files and `build-apk.bat` are build entry points.
+This repository contains the minimal buildable Android production source for
+PikminX `3.2.0` (`versionCode 376`). It does not contain APKs, signing keys,
+device captures, validation evidence, or development archives.
 
-- `code/app` (active PikminX source)
-- `apk/Pikmix_2.0.3.apk`
+## Build
+
+Requirements:
+
+- JDK 17
+- Android SDK Platform 35 and Build Tools 35
+- Network access for the first dependency download
+
+Windows PowerShell:
+
+```powershell
+.\gradlew.bat -p code :app:assembleDebug
+```
+
+macOS or Linux:
+
+```bash
+./gradlew -p code :app:assembleDebug
+```
+
+The APK is written to `code/app/build/outputs/apk/debug/app-debug.apk`.
+Release signing material is intentionally not included.
+
+## License
+
+PikminX is source-available under the [PolyForm Noncommercial License](LICENSE)
+and the supplemental terms in [LICENSE.md](LICENSE.md); it is not presented as
+OSI open-source software.
