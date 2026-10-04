@@ -22,6 +22,7 @@ final class ExpeditionDispatchSession {
     }
 
     enum CandidateRetry { WAIT, REACQUIRE, QUARANTINED }
+    enum ResultCloseDecision { WAIT, RETRY, EXHAUSTED }
     enum Outcome { RUNNING, COMPLETE, COMPLETE_WITH_SKIPS, ABORTED }
     enum ListDecision { WAIT, EXPAND, SCROLL_UP, SCAN, COMPLETE, ABORT }
 
@@ -29,6 +30,8 @@ final class ExpeditionDispatchSession {
     private static final int REQUIRED_DESTINATION_FRAMES = 2;
     private static final long DETAIL_TAP_RETRY_DELAY_MILLIS = 3_500L;
     private static final int MAX_DETAIL_TAP_ATTEMPTS = 2;
+    private static final long RESULT_CLOSE_RETRY_DELAY_MILLIS = 3_500L;
+    private static final int MAX_RESULT_CLOSE_ATTEMPTS = 3;
 
     private Outcome outcome = Outcome.RUNNING;
     private boolean normalizing = true;
@@ -60,6 +63,9 @@ final class ExpeditionDispatchSession {
     private int matchingDestinationFrames;
     private int detailTapAttempts;
     private long detailTapAt;
+    private int resultCloseAttempts;
+    private long resultCloseAt;
+    private long resultCloseCapture = -1L;
 
     ExpeditionDispatchSession(long nowMillis) {
         stageStartedAt = nowMillis;
@@ -90,6 +96,10 @@ final class ExpeditionDispatchSession {
             boolean actionableVisible, long nowMillis) {
         if (outcome == Outcome.ABORTED) return ListDecision.ABORT;
         if (complete()) return ListDecision.COMPLETE;
+        // A list-vision callback may finish after the workflow has advanced through
+        // DETAIL into PIKMIN_SELECTION. It is still a fresh capture and the same run,
+        // but it no longer owns the list preflight; never let it resurrect EXPAND.
+        if (stage != Stage.LIST_SEARCH || transitionPending) return ListDecision.WAIT;
         if (capture <= lastListCapture) return ListDecision.WAIT;
         lastListCapture = capture;
         if (timedOut(nowMillis) || listScrolls >= EMERGENCY_SCROLL_LIMIT) {
@@ -159,24 +169,9 @@ final class ExpeditionDispatchSession {
 
     /** Called only by the current run's successful gesture callback, never on a rejected action. */
     void recordListScroll(long signature, boolean atBottom) {
-        if (stage != Stage.LIST_SEARCH || outcome != Outcome.RUNNING) return;
+        if (stage != Stage.LIST_SEARCH || outcome != Outcome.RUNNING || transitionPending) return;
         awaitingScroll = true; scrollBaseline = signature; scrollStartedAtBottom = atBottom; repeatedViewportFrames = 0; missingBottomFrames = 0;
         listScrolls++;
-    }
-
-    /** Return-to-list uses one observed upward reveal before the next candidate scan. */
-    void recordReturnRevealScroll(long nowMillis) {
-        if (stage != Stage.LIST_SEARCH || outcome != Outcome.RUNNING) return;
-        // The user-observed reveal gesture runs first. Then normalize to the list
-        // top so targets above the returned viewport cannot be skipped.
-        normalizing = true;
-        awaitingScroll = false;
-        scrollStartedAtBottom = false;
-        repeatedViewportFrames = 0;
-        missingBottomFrames = 0;
-        scrollbarSettleFrames = 0;
-        viewportEpoch++;
-        recordProgress(nowMillis);
     }
 
     void recordSkippedCandidate(long nowMillis) {
@@ -257,6 +252,36 @@ final class ExpeditionDispatchSession {
         return detailTapAttempts;
     }
 
+    /** Records one admitted result-close tap; every retry must use a newer capture. */
+    boolean beginResultCloseAttempt(long sourceCapture, long nowMillis) {
+        if (outcome != Outcome.RUNNING || stage != Stage.WAIT_RESULT
+                || resultCloseAttempts >= MAX_RESULT_CLOSE_ATTEMPTS
+                || resultCloseAttempts > 0 && sourceCapture <= resultCloseCapture) {
+            return false;
+        }
+        resultCloseAttempts++;
+        resultCloseCapture = sourceCapture;
+        resultCloseAt = nowMillis;
+        beginTransition(nowMillis);
+        return true;
+    }
+
+    /** A persistent green result X may be retried only after a fresh settled frame. */
+    ResultCloseDecision observePendingResultClose(
+            boolean closeVisible, long capture, long nowMillis) {
+        if (stage != Stage.WAIT_RESULT || !transitionPending || resultCloseAttempts == 0
+                || !closeVisible || capture <= resultCloseCapture
+                || nowMillis - resultCloseAt < RESULT_CLOSE_RETRY_DELAY_MILLIS) {
+            return ResultCloseDecision.WAIT;
+        }
+        return resultCloseAttempts >= MAX_RESULT_CLOSE_ATTEMPTS
+                ? ResultCloseDecision.EXHAUSTED : ResultCloseDecision.RETRY;
+    }
+
+    int resultCloseAttempts() {
+        return resultCloseAttempts;
+    }
+
     /** 同一頁內的有效操作也算進度，避免長流程被固定頁面逾時中止。 */
     void recordProgress(long nowMillis) {
         stageStartedAt = nowMillis;
@@ -302,6 +327,7 @@ final class ExpeditionDispatchSession {
         }
         stage = next;
         if (next == Stage.SELECTION) completedGoCapture = -1;
+        if (next == Stage.WAIT_RESULT) resetResultCloseAttempts();
         stageStartedAt = nowMillis;
         pendingKey = "";
         matchingFrames = 0;
@@ -314,15 +340,15 @@ final class ExpeditionDispatchSession {
         return true;
     }
 
-    private void resetListScan() {
-        normalizing = true; awaitingScroll = false; repeatedViewportFrames = 0;
-        scrollbarSettleFrames = 0; listScrolls = 0;
-        lastListCapture = -1; viewportEpoch++;
-    }
-
     private void resetDetailTap() {
         detailTapAttempts = 0;
         detailTapAt = 0L;
+    }
+
+    private void resetResultCloseAttempts() {
+        resultCloseAttempts = 0;
+        resultCloseAt = 0L;
+        resultCloseCapture = -1L;
     }
 
     /** 手勢成功只代表 Android 接受輸入；看到目的頁後才推進派遣階段。 */
@@ -339,6 +365,17 @@ final class ExpeditionDispatchSession {
 
     boolean advanceForVerifiedScreen(
             ExpeditionScreenAnalyzer.Screen screen, long nowMillis) {
+        return advanceForVerifiedScreen(screen, false, nowMillis);
+    }
+
+    boolean advanceForVerifiedScreen(
+            ExpeditionScreenAnalyzer.Screen screen,
+            boolean resultCloseVisible,
+            long nowMillis) {
+        if (stage == Stage.WAIT_RESULT && resultCloseVisible) {
+            resetDestinationEvidence();
+            return false;
+        }
         Stage next = switch (stage) {
             case LIST_SEARCH -> screen == ExpeditionScreenAnalyzer.Screen.DETAIL
                     ? Stage.DETAIL : null;
@@ -374,7 +411,13 @@ final class ExpeditionDispatchSession {
         matchingFrames = 0;
         transitionPending = false;
         resetDestinationEvidence();
-        resetListScan();
+        // Resume the same top-to-bottom sweep. Only transient gesture-settle state
+        // is cleared; the current viewport, scroll budget and stale-frame boundary remain.
+        awaitingScroll = false;
+        scrollStartedAtBottom = false;
+        repeatedViewportFrames = 0;
+        missingBottomFrames = 0;
+        scrollbarSettleFrames = 0;
         return true;
     }
 

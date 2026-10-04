@@ -133,7 +133,7 @@ final class MapPostcardBubbleDetector {
         int luminance = (red * 299 + green * 587 + blue * 114) / 1000;
         int chroma = Math.max(red, Math.max(green, blue))
                 - Math.min(red, Math.min(green, blue));
-        return luminance <= 118 && chroma <= 55;
+        return luminance <= 118 && chroma <= 20;
     }
 
     private record ForegroundStats(float ratio, float widthCoverage, float heightCoverage) {}

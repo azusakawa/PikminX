@@ -655,7 +655,7 @@ final class ExpeditionScreenAnalyzer {
         int left = Math.max(0, Math.round(width * 0.035f));
         int right = Math.min(width - 1, Math.round(width * 0.145f));
         int top = Math.max(0, Math.round(height * 0.30f));
-        int bottom = Math.min(height - 1, Math.round(height * 0.48f));
+        int bottom = Math.min(height - 1, Math.round(height * 0.44f));
         int radius = Math.max(6, Math.round(height * 0.012f));
         int[] rowCounts = new int[bottom - top + 1];
         long[] rowXSums = new long[rowCounts.length];
