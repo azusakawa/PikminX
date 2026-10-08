@@ -367,7 +367,6 @@ public final class PetalAccessibilityService extends AccessibilityService {
     private boolean feedCollectReturningFromShare;
     private int feedCollectReturnFrames;
     private FeedCollectPhase feedCollectPhase = FeedCollectPhase.LOCATING_BLOOM;
-    private boolean feedCollectionOnlyRecovery;
     private FeedScreenAnalyzer.VisualSignature feedBloomBaseline;
     private FeedScreenAnalyzer.BloomTarget feedBloomCandidate;
     private int feedBloomCandidateFrames;
@@ -1292,7 +1291,6 @@ public final class PetalAccessibilityService extends AccessibilityService {
         feedCollectReturningFromDetail = false;
         feedCollectReturningFromShare = false;
         feedCollectReturnFrames = 0;
-        feedCollectionOnlyRecovery = false;
         resetFeedSpiralState();
         resetFeedHoldState();
         renderWorkflowStarted();
@@ -2822,11 +2820,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
     private void handleFeedTokens(OcrScan.Frame frame, Bitmap bitmap) {
         List<PetalMatcher.Token> tokens = frame.tokens();
         switch (feedStep) {
-            case WAITING_GAME_READY -> {
-                if (!resumeFeedFromExistingPetalReady(tokens, bitmap)) {
-                    waitForFeedGameReady(tokens, bitmap);
-                }
-            }
+            case WAITING_GAME_READY -> waitForFeedGameReady(tokens, bitmap);
             case OPENING_NECTAR -> {
                 boolean detailOpen = FeedScreenAnalyzer.isPikminDetailOpen(tokens);
                 boolean searchControlVisible = CardHighlight.isPetalSearchOpen(
@@ -3346,52 +3340,6 @@ public final class PetalAccessibilityService extends AccessibilityService {
                 + " fullMatches=" + matchStats.fullMatchExecutions()
                 + " cacheHits=" + matchStats.cacheHits());
         return evidence;
-    }
-
-    private boolean resumeFeedFromExistingPetalReady(
-            List<PetalMatcher.Token> tokens, Bitmap bitmap) {
-        int width = bitmap.getWidth();
-        int height = bitmap.getHeight();
-        if (FeedScreenAnalyzer.isPikminDetailOpen(tokens)
-                || FeedScreenAnalyzer.isNectarPanelOpen(tokens, width, height, bitmap::getPixel)) {
-            feedBloomCandidate = null;
-            feedBloomCandidateFrames = 0;
-            return false;
-        }
-        Integer nectarCount = FeedScreenAnalyzer.currentNectarCount(tokens, width, height);
-        FeedScreenAnalyzer.BloomTarget target = FeedScreenAnalyzer.findExistingBloomTarget(
-                feedTargetFlower, width, height, bitmap::getPixel);
-        if (nectarCount == null || target == null) {
-            feedBloomCandidate = null;
-            feedBloomCandidateFrames = 0;
-            return false;
-        }
-        feedReadyMissingFrames = 0;
-        if (FeedScreenAnalyzer.isSameBloomTarget(
-                feedBloomCandidate, target, width, height)) {
-            feedBloomCandidateFrames++;
-        } else {
-            feedBloomCandidateFrames = 1;
-        }
-        feedBloomCandidate = target;
-        logFeedSpiral("petal-ready-candidate",
-                "target=" + feedTargetFlower
-                        + " nectar=" + nectarCount
-                        + " x=" + target.x()
-                        + " y=" + target.y()
-                        + " frames=" + feedBloomCandidateFrames);
-        if (!FeedScreenAnalyzer.hasStableBloom(
-                feedBloomCandidateFrames, FEED_REQUIRED_BLOOM_TARGET_FRAMES)) {
-            statusFeed(getString(
-                    R.string.status_feed_collect_target_confirming,
-                    feedBloomCandidateFrames,
-                    FEED_REQUIRED_BLOOM_TARGET_FRAMES));
-            schedule(FEED_COLLECT_SCAN_MILLIS);
-            return true;
-        }
-        feedReadyStability.reset();
-        beginRecoveredFeedPetalCollection(target);
-        return true;
     }
 
     private void waitForFeedGameReady(List<PetalMatcher.Token> tokens, Bitmap bitmap) {
@@ -3940,40 +3888,6 @@ public final class PetalAccessibilityService extends AccessibilityService {
         schedule(FEED_OCR_RETRY_MILLIS);
     }
 
-    private void beginRecoveredFeedPetalCollection(
-            FeedScreenAnalyzer.BloomTarget target) {
-        feedStep = FeedStep.COLLECTING;
-        feedCollectionOnlyRecovery = true;
-        feedCollectedPetals = 0;
-        feedCollectAfterCount = false;
-        feedNoEffectStartedAt = 0L;
-        feedCollectReturningFromDetail = false;
-        feedCollectReturningFromShare = false;
-        feedCollectReturnFrames = 0;
-        prepareFeedSpiralHarvest();
-        feedBloomCandidate = target;
-        feedBloomCandidateFrames = FEED_REQUIRED_BLOOM_TARGET_FRAMES;
-        resetFeedHoldState();
-        Rect bounds = activeGameBoundsStrict();
-        if (bounds == null || bounds.width() <= 0 || bounds.height() <= 0) {
-            stopWithError(getString(R.string.status_feed_left_game));
-            return;
-        }
-        ScreenCoordinateTransform.Point screenTarget = ScreenCoordinateTransform.toScreen(
-                target.x(), target.y(), currentCaptureGeometry());
-        FeedScreenAnalyzer.BloomTarget localTarget = new FeedScreenAnalyzer.BloomTarget(
-                screenTarget.x() - bounds.left,
-                screenTarget.y() - bounds.top,
-                target.score());
-        logFeedSpiral("petal-ready-recovery",
-                "target=" + feedTargetFlower
-                        + " x=" + target.x()
-                        + " y=" + target.y()
-                        + " screenX=" + screenTarget.x()
-                        + " screenY=" + screenTarget.y());
-        dispatchFeedSpiralHarvest(bounds, localTarget);
-    }
-
     private boolean closeFeedPikminDetailIfOpen(List<PetalMatcher.Token> tokens) {
         if (!FeedScreenAnalyzer.isPikminDetailOpen(tokens)) {
             feedDetailCloseAttempts = 0;
@@ -4181,11 +4095,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
             schedule(FEED_COLLECT_SCAN_MILLIS);
             return;
         }
-        if (feedCollectionOnlyRecovery) {
-            completeFeedPetalCollection();
-        } else {
-            readFeedConsumedNectar(true);
-        }
+        readFeedConsumedNectar(true);
     }
 
     private void recordFeedPetalGain(int gain) {
@@ -4275,7 +4185,6 @@ public final class PetalAccessibilityService extends AccessibilityService {
         feedAttemptCount = 0;
         feedNectarBeforeRound = -1;
         feedCollectAfterCount = false;
-        feedCollectionOnlyRecovery = false;
         feedNoEffectStartedAt = 0L;
         feedDetailCloseAttempts = 0;
         feedZoomReady = false;
@@ -4978,9 +4887,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
                                     detected.scrollbar() != null && detected.scrollbar().atTop(),
                                     detected.scrollbar() != null && detected.scrollbar().atBottom(),
                                     candidates.stream().anyMatch(candidate ->
-                                            dispatchCandidateActionable(candidate, width, height)
-                                                    || ExpeditionRecognition.requiresTitleOcr(
-                                                            candidate.classification(), candidate.fruit())), now);
+                                            dispatchCandidateActionable(candidate, width, height)), now);
                             Log.i(TAG, "EXPEDITION_SWEEP decision=" + decision + " frame=" + geometry.captureSequence()
                                     + " normalizing=" + expeditionDispatchSession.normalizing()
                                     + " signature=" + signature + " epoch=" + expeditionDispatchSession.viewportEpoch()
@@ -5024,6 +4931,11 @@ public final class PetalAccessibilityService extends AccessibilityService {
     }
 
     private boolean dispatchCandidateActionable(DispatchVisualCandidate candidate, int width, int height) {
+        if (ExpeditionRecognition.shouldEscalateToTitleOcr(
+                candidate.classification(), candidate.fruit())) {
+            return !dispatchInspectedVisual.contains(
+                    dispatchVisualKey(candidate, width, height));
+        }
         ExpeditionScreenAnalyzer.ItemKind kind = switch (candidate.classification()) {
             case FRUIT -> ExpeditionScreenAnalyzer.ItemKind.FRUIT;
             case SEEDLING -> ExpeditionScreenAnalyzer.ItemKind.POT;
@@ -5111,9 +5023,8 @@ public final class PetalAccessibilityService extends AccessibilityService {
                                         ? ExpeditionRecognition.Classification.FRUIT : ExpeditionRecognition.Classification.SEEDLING;
                         ExpeditionRecognition.Classification agreement = expeditionRecognitionConsensus.observe(
                                 generation, geometry.captureSequence(), key + ":" + (ocr == null ? "" : ExpeditionScreenAnalyzer.normalize(ocr.label())), meaning);
-                        boolean resolvable = candidate.classification()
-                                == ExpeditionRecognition.Classification.AMBIGUOUS
-                                || greenAppleGuard;
+                        boolean resolvable = ExpeditionRecognition.shouldEscalateToTitleOcr(
+                                candidate.classification(), candidate.fruit());
                         String ocrLabel = ocr == null ? ""
                                 : ExpeditionScreenAnalyzer.normalize(ocr.label());
                         Log.i(TAG, "EXPEDITION_TITLE_OCR key=" + key
@@ -7519,13 +7430,13 @@ public final class PetalAccessibilityService extends AccessibilityService {
         ReturnRewardDetector.SquadCloseup squadCloseup =
                 ReturnRewardDetector.classifySquadCloseup(
                         width, height, bitmap::getPixel);
-        boolean squadCloseupConfirmed = pikminDetailOpen
-                || squadCloseup == ReturnRewardDetector.SquadCloseup.SQUAD_CLOSEUP;
-        boolean squadCloseupUnknown = !pikminDetailOpen
+        boolean useSquadCloseupEvidence =
+                ReturnRewardDetector.canUseSquadCloseupEvidence(detectedRewardTarget);
+        boolean squadCloseupConfirmed = useSquadCloseupEvidence && (pikminDetailOpen
+                || squadCloseup == ReturnRewardDetector.SquadCloseup.SQUAD_CLOSEUP);
+        boolean squadCloseupUnknown = useSquadCloseupEvidence && !pikminDetailOpen
                 && squadCloseup == ReturnRewardDetector.SquadCloseup.UNKNOWN;
-        ReturnRewardDetector.Target rewardTarget = squadCloseupConfirmed
-                || squadCloseupUnknown
-                ? null : detectedRewardTarget;
+        ReturnRewardDetector.Target rewardTarget = detectedRewardTarget;
 
         boolean nectarWarningVisible = ReturnRewardDetector.hasNectarCapacityWarning(
                 tokens, width, height);
@@ -9553,7 +9464,6 @@ public final class PetalAccessibilityService extends AccessibilityService {
         feedCollectReturningFromDetail = false;
         feedCollectReturningFromShare = false;
         feedCollectReturnFrames = 0;
-        feedCollectionOnlyRecovery = false;
         resetFeedSpiralState();
         resetFeedHoldState();
         automationStep = AutomationStep.CHECKING_PLANTING_ENTRY;

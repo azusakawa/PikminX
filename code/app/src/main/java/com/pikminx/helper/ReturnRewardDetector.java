@@ -113,8 +113,19 @@ final class ReturnRewardDetector {
             int centerY = Math.min(
                     top + Math.round((sumY / (float) count) * step),
                     top + minY * step + Math.round(componentHeight * 0.45f));
+            boolean oversized = componentWidth > width * 0.56f;
+            boolean boundedOversized = region != null
+                    && oversized
+                    && componentWidth <= width * 0.66f
+                    && componentHeight >= height * 0.12f
+                    && componentWidth <= componentHeight * 1.8f
+                    && fill >= 0.50f
+                    && fill <= 0.82f
+                    && areaRatio >= 0.04f
+                    && Math.abs(centerX - (left + right) / 2) <= (right - left) * 0.20f
+                    && Math.abs(centerY - (top + bottom) / 2) <= (bottom - top) * 0.20f;
             if (componentWidth < width * 0.08f
-                    || componentWidth > width * 0.56f
+                    || (oversized && !boundedOversized)
                     || componentHeight < height * 0.045f
                     || componentHeight > height * 0.26f
                     || (componentWidth > width * 0.38f
@@ -128,7 +139,13 @@ final class ReturnRewardDetector {
                                     || centerX > width * 0.85f
                                     || centerY < height * 0.43f
                                     || centerY > height * 0.67f))
-                    || !hasFieldLikeBackground(width, height, centerX, centerY, pixelAt)
+                    || !hasFieldLikeBackground(
+                            width,
+                            height,
+                            centerX,
+                            centerY,
+                            pixelAt,
+                            boundedOversized ? 0.55f : 0.34f)
                     || looksLikeGift(width, height, centerX, centerY, pixelAt)) {
                 continue;
             }
@@ -137,7 +154,7 @@ final class ReturnRewardDetector {
             float centerPenalty = Math.abs(centerX - expectedCenterX) / width
                     + Math.abs(centerY - expectedCenterY) / height;
             float confidence = areaRatio * 8f + fill * 0.35f - centerPenalty * 0.2f;
-            if (confidence < MIN_REWARD_CONFIDENCE) {
+            if (confidence < (boundedOversized ? 0.45f : MIN_REWARD_CONFIDENCE)) {
                 continue;
             }
             Target candidate = new Target(
@@ -147,6 +164,10 @@ final class ReturnRewardDetector {
             }
         }
         return best;
+    }
+
+    static boolean canUseSquadCloseupEvidence(Target detectedReward) {
+        return detectedReward == null;
     }
 
     /** Uses scene scale and edge clipping, not Pikmin/decor colors, to detect the terminal closeup. */
@@ -276,7 +297,8 @@ final class ReturnRewardDetector {
             int height,
             int centerX,
             int centerY,
-            IntBinaryOperator pixelAt) {
+            IntBinaryOperator pixelAt,
+            float minimumRatio) {
         int step = Math.max(2, Math.round(width / 216f));
         int left = clamp(centerX - Math.round(width * 0.26f), 0, width - 1);
         int right = clamp(centerX + Math.round(width * 0.26f), 0, width - 1);
@@ -302,7 +324,7 @@ final class ReturnRewardDetector {
                 samples++;
             }
         }
-        return samples >= 20 && fieldPixels / (float) samples >= 0.34f;
+        return samples >= 20 && fieldPixels / (float) samples >= minimumRatio;
     }
 
     /** Excludes the red-ribbon, neutral-box gift icon that must never be collected as fruit. */
