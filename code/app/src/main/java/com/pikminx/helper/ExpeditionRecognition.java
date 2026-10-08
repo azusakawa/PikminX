@@ -97,6 +97,13 @@ final class ExpeditionRecognition {
                 && "large_green_apple.png".equals(fruit.bestTemplate());
     }
 
+    /** Stable title OCR may resolve uncertain visuals without weakening score admission. */
+    static boolean shouldEscalateToTitleOcr(Classification classification, Scores fruit) {
+        return classification == Classification.UNKNOWN
+                || classification == Classification.AMBIGUOUS
+                || requiresTitleOcr(classification, fruit);
+    }
+
     private static boolean clear(Scores scores, double minimum, double margin) {
         if (scores != null && "SEEDLING".equals(scores.bank())) {
             if ("seedling_white.png".equals(scores.bestTemplate())) {

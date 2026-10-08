@@ -1,7 +1,7 @@
-# PikminX 3.2.0
+# PikminX 3.2.1
 
 This repository contains the minimal buildable Android production source for
-PikminX `3.2.0` (`versionCode 376`). It does not contain APKs, signing keys,
+PikminX `3.2.1` (`versionCode 377`). It does not contain APKs, signing keys,
 device captures, validation evidence, or development archives.
 
 ## Build
