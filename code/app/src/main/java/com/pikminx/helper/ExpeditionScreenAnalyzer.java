@@ -631,6 +631,36 @@ final class ExpeditionScreenAnalyzer {
         return null;
     }
 
+    /** MIXED search closes back to this row; use current pixels when Auto OCR is absent. */
+    static Point findPikminAutoButtonFromCollapsedSearch(
+            List<PetalMatcher.Token> tokens,
+            int width,
+            int height,
+            IntBinaryOperator pixelAt) {
+        if (!hasSelectionCounter(joined(tokens))) {
+            return null;
+        }
+        Point search = findPikminSearchButton(width, height, pixelAt);
+        if (search == null) {
+            return null;
+        }
+        int centerX = search.x() + Math.round(width * 0.13f);
+        int halfWidth = Math.max(12, Math.round(width * 0.06f));
+        int halfHeight = Math.max(8, Math.round(height * 0.018f));
+        int darkPixels = 0;
+        for (int y = Math.max(0, search.y() - halfHeight);
+                y <= Math.min(height - 1, search.y() + halfHeight); y += 2) {
+            for (int x = Math.max(0, centerX - halfWidth);
+                    x <= Math.min(width - 1, centerX + halfWidth); x += 2) {
+                if (neutralDarkControl(pixelAt.applyAsInt(x, y))) {
+                    darkPixels++;
+                }
+            }
+        }
+        return darkPixels >= Math.max(8, Math.round(width * 0.02f))
+                ? new Point(centerX, search.y()) : null;
+    }
+
     /** GO 只會在選取完成後出現在右下角；限制區域可同時作為選取成功證據。 */
     static Point findPikminGoButton(
             List<PetalMatcher.Token> tokens, int width, int height) {
@@ -841,7 +871,7 @@ final class ExpeditionScreenAnalyzer {
                 || isTinySingleCharacterNoise(candidate, text, width, height)
                 || containsSeedling(text)
                 || containsGift(text)
-                || containsAny(text, "蘑菇", "磨菇", "完成", "領取", "领取", "探險", "探险",
+                || containsAny(text, "蘑", "磨菇", "完成", "領取", "领取", "探險", "探险",
                         "飾品一覽", "饰品一览", "明信片", "花苗和水果")) {
             return false;
         }

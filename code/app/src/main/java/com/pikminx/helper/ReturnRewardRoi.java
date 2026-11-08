@@ -5,9 +5,9 @@ final class ReturnRewardRoi {
     private static final float WIDTH_RATIO = 0.52f;
     private static final float HEIGHT_RATIO = 0.24f;
     private static final float DEFAULT_LEFT_RATIO = 0.18f;
-    private static final float DEFAULT_TOP_RATIO = 0.52f;
+    private static final float DEFAULT_TOP_RATIO = 0.48f;
     private static final float DEFAULT_RIGHT_RATIO = 0.82f;
-    private static final float DEFAULT_BOTTOM_RATIO = 0.70f;
+    private static final float DEFAULT_BOTTOM_RATIO = 0.66f;
 
     private CaptureGeometry.Bounds screenBounds;
     private CaptureGeometry.Bounds armedGameBounds;

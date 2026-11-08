@@ -7,6 +7,7 @@ import java.util.function.IntBinaryOperator;
 /** Finds the large returned fruit or seedling pot shown in the center of the squad screen. */
 final class ReturnRewardDetector {
     private static final float MIN_REWARD_CONFIDENCE = 0.20f;
+    private static final float MIN_SQUAD_TARGET_CONFIDENCE = 0.45f;
 
     enum SquadCloseup {
         SQUAD_CLOSEUP,
@@ -30,6 +31,8 @@ final class ReturnRewardDetector {
         }
     }
 
+    record Observation(Target target, boolean ambiguousForeground) {}
+
     private ReturnRewardDetector() {}
 
     static Target find(int width, int height, IntBinaryOperator pixelAt) {
@@ -41,8 +44,16 @@ final class ReturnRewardDetector {
             int height,
             IntBinaryOperator pixelAt,
             Region region) {
+        return observe(width, height, pixelAt, region).target();
+    }
+
+    static Observation observe(
+            int width,
+            int height,
+            IntBinaryOperator pixelAt,
+            Region region) {
         if (width <= 0 || height <= 0) {
-            return null;
+            return new Observation(null, false);
         }
         int step = Math.max(2, Math.round(width / 216f));
         int left = region == null
@@ -54,7 +65,7 @@ final class ReturnRewardDetector {
         int bottom = region == null
                 ? Math.round(height * 0.70f) : clamp(region.bottom(), 0, height);
         if (right <= left || bottom <= top) {
-            return null;
+            return new Observation(null, false);
         }
         int gridWidth = Math.max(1, (right - left + step - 1) / step);
         int gridHeight = Math.max(1, (bottom - top + step - 1) / step);
@@ -69,6 +80,7 @@ final class ReturnRewardDetector {
         }
 
         Target best = null;
+        boolean ambiguousForeground = false;
         ArrayDeque<Integer> queue = new ArrayDeque<>();
         for (int index = 0; index < foreground.length; index++) {
             if (!foreground[index] || visited[index]) {
@@ -124,6 +136,13 @@ final class ReturnRewardDetector {
                     && areaRatio >= 0.04f
                     && Math.abs(centerX - (left + right) / 2) <= (right - left) * 0.20f
                     && Math.abs(centerY - (top + bottom) / 2) <= (bottom - top) * 0.20f;
+            ambiguousForeground |= region != null
+                    && oversized
+                    && componentHeight >= height * 0.085f
+                    && fill >= 0.28f
+                    && areaRatio >= 0.02f
+                    && Math.abs(centerX - (left + right) / 2) <= (right - left) * 0.30f
+                    && Math.abs(centerY - (top + bottom) / 2) <= (bottom - top) * 0.30f;
             if (componentWidth < width * 0.08f
                     || (oversized && !boundedOversized)
                     || componentHeight < height * 0.045f
@@ -163,11 +182,19 @@ final class ReturnRewardDetector {
                 best = candidate;
             }
         }
-        return best;
+        return new Observation(best, best == null && ambiguousForeground);
     }
 
-    static boolean canUseSquadCloseupEvidence(Target detectedReward) {
-        return detectedReward == null;
+    static boolean canUseAbsenceEvidence(Observation observation) {
+        return observation != null
+                && observation.target() == null
+                && !observation.ambiguousForeground();
+    }
+
+    static boolean isAmbiguousSquadTarget(Target target, SquadCloseup squadCloseup) {
+        return target != null
+                && squadCloseup == SquadCloseup.SQUAD_CLOSEUP
+                && target.confidence() < MIN_SQUAD_TARGET_CONFIDENCE;
     }
 
     /** Uses scene scale and edge clipping, not Pikmin/decor colors, to detect the terminal closeup. */

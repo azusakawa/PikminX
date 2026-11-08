@@ -1,34 +1,32 @@
-# PikminX 3.2.1
+# PikminX 3.2.2
 
-This repository contains the minimal buildable Android production source for
-PikminX `3.2.1` (`versionCode 377`). It does not contain APKs, signing keys,
-device captures, validation evidence, or development archives.
+此專案包含 PikminX 3.2.2 版本的 Android 原始碼。
 
-## Build
+## 專案資訊
 
-Requirements:
+- Android application ID：`com.pikminx.helper`
+- 版本名稱：`3.2.2`
+- 版本代碼：`378`
+- Android Gradle Plugin：`8.7.3`
+- Java：`17`
+- Android SDK：`compileSdk 35`、`minSdk 30`、`targetSdk 35`
 
-- JDK 17
-- Android SDK Platform 35 and Build Tools 35
-- Network access for the first dependency download
+## 建置與測試
 
-Windows PowerShell:
+請先安裝 JDK 17 與 Android SDK 35，並在終端機切換至 `code` 目錄：
 
 ```powershell
 .\gradlew.bat -p code :app:assembleDebug
 ```
 
-macOS or Linux:
+執行 JVM 單元測試：
 
-```bash
-./gradlew -p code :app:assembleDebug
+```powershell
+.\gradlew.bat -p code :app:testDebugUnitTest
 ```
 
-The APK is written to `code/app/build/outputs/apk/debug/app-debug.apk`.
-Release signing material is intentionally not included.
+Debug APK 會輸出至 `code/app/build/outputs/apk/debug/app-debug.apk`。Release 簽章設定請留在本機，不要提交簽章檔或密碼。
 
-## License
+## 授權
 
-PikminX is source-available under the [PolyForm Noncommercial License](LICENSE)
-and the supplemental terms in [LICENSE.md](LICENSE.md); it is not presented as
-OSI open-source software.
+本專案依 [PolyForm Noncommercial License](LICENSE) 與補充條款 [LICENSE.md](LICENSE.md) 授權，並非以 OSI 開源軟體呈現。

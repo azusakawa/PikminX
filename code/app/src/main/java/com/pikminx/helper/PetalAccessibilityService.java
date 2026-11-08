@@ -206,6 +206,8 @@ public final class PetalAccessibilityService extends AccessibilityService {
     private WindowManager returnRewardWindowManager;
     private SettingsStore settings;
     private OcrRuntime ocrRuntime;
+    private final AdmissionDiagnostics admissionDiagnostics = new AdmissionDiagnostics();
+    private final WorkflowDiagnostics workflowDiagnostics = new WorkflowDiagnostics();
     private final FrameAnalysisExecutor frameAnalysisExecutor = new FrameAnalysisExecutor();
     private H10aAnalysisJob activeH10aAnalysisJob;
     private NectarTemplateMatcher nectarTemplateMatcher;
@@ -310,8 +312,6 @@ public final class PetalAccessibilityService extends AccessibilityService {
     private CaptureCoordinator<Void, Bitmap> captureCoordinator;
     private ActionGateway actionGateway;
     private PendingCaptureOnlyAction pendingCaptureOnlyAction;
-    private final AdmissionDiagnostics admissionDiagnostics = new AdmissionDiagnostics();
-    private final WorkflowDiagnostics workflowDiagnostics = new WorkflowDiagnostics();
     private final ThreadLocal<CaptureGeometry> handlingCaptureGeometry = new ThreadLocal<>();
     private final ThreadLocal<ActionAdmission.FrameContext> handlingActionContext =
             new ThreadLocal<>();
@@ -674,7 +674,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
         activeH10aAnalysisJob = job;
         busy = true;
         workflowDiagnostics.recordCount(
-                WorkflowDiagnostics.Counter.FRAME_ANALYSIS_SUBMISSIONS);
+                        WorkflowDiagnostics.Counter.FRAME_ANALYSIS_SUBMISSIONS);
         workflowDiagnostics.recordAnalysisQueueState(
                 frameAnalysisExecutor.depth(), frameAnalysisExecutor.highWater());
         if (frameAnalysisExecutor.submit(job::run)) {
@@ -683,7 +683,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
             return true;
         }
         workflowDiagnostics.recordCount(
-                WorkflowDiagnostics.Counter.FRAME_ANALYSIS_REJECTED_SUBMISSIONS);
+                        WorkflowDiagnostics.Counter.FRAME_ANALYSIS_REJECTED_SUBMISSIONS);
         activeH10aAnalysisJob = null;
         job.cancel();
         transaction.cancelPostProcessingDeferral();
@@ -734,7 +734,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
                             automationStep.name()),
                     MAX_ACTIONABLE_FRAME_AGE_MILLIS);
             workflowDiagnostics.recordDuration(
-                    WorkflowDiagnostics.Metric.ACTION_DECISION,
+                            WorkflowDiagnostics.Metric.ACTION_DECISION,
                     android.os.SystemClock.uptimeMillis()
                             - actionDecisionStartedAtUptimeMillis);
             boolean frameSafe = job.frame.canDriveAction(job.transaction.id());
@@ -753,7 +753,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
             if (!admission.allowed() || !frameSafe) {
                 outcome = "ANALYSIS_ADMISSION_REJECTED";
                 workflowDiagnostics.recordCount(
-                        WorkflowDiagnostics.Counter.FRAME_ANALYSIS_STALE_RESULTS);
+                                WorkflowDiagnostics.Counter.FRAME_ANALYSIS_STALE_RESULTS);
                 Log.i(TAG, "H10A_ANALYSIS_DROP reason=" + admission.reason()
                         + " actionReason=" + admission.actionReason()
                         + " tx=" + job.transaction.id());
@@ -761,7 +761,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
                 return;
             }
             workflowDiagnostics.recordCount(
-                    WorkflowDiagnostics.Counter.FRAME_ANALYSIS_COMPLETIONS);
+                            WorkflowDiagnostics.Counter.FRAME_ANALYSIS_COMPLETIONS);
             runWithActionContext(
                     job.transaction,
                     job.frame,
@@ -788,7 +788,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
         busy = false;
         job.cancel();
         workflowDiagnostics.recordCount(
-                WorkflowDiagnostics.Counter.FRAME_ANALYSIS_STALE_RESULTS);
+                        WorkflowDiagnostics.Counter.FRAME_ANALYSIS_STALE_RESULTS);
         ocrRuntime.diagnostics().markHandleTokensEnd(job.transaction.id());
         ocrRuntime.finishDeferredPostProcessing(job.transaction, "ANALYSIS_CANCELLED");
         workflowDiagnostics.recordAnalysisQueueState(
@@ -805,29 +805,29 @@ public final class PetalAccessibilityService extends AccessibilityService {
         }
         String threadName = Thread.currentThread().getName();
         workflowDiagnostics.recordDuration(
-                WorkflowDiagnostics.Metric.FRAME_ANALYSIS,
+                        WorkflowDiagnostics.Metric.FRAME_ANALYSIS,
                 totalMillis,
                 threadName,
                 mainThread);
         workflowDiagnostics.recordDuration(
-                WorkflowDiagnostics.Metric.MAP_DETECTOR,
+                        WorkflowDiagnostics.Metric.MAP_DETECTOR,
                 result.timings().mapDetectorMillis(),
                 threadName,
                 mainThread);
         workflowDiagnostics.recordDuration(
-                WorkflowDiagnostics.Metric.PIXEL_DETECTOR,
+                        WorkflowDiagnostics.Metric.PIXEL_DETECTOR,
                 result.timings().pixelDetectorMillis(),
                 threadName,
                 mainThread);
         workflowDiagnostics.recordDuration(
-                WorkflowDiagnostics.Metric.IMAGE_SAMPLING,
+                        WorkflowDiagnostics.Metric.IMAGE_SAMPLING,
                 saturatingAdd(
                         Math.max(0L, snapshotMillis),
                         result.timings().imageSamplingMillis()),
                 threadName,
                 mainThread);
         workflowDiagnostics.recordDuration(
-                WorkflowDiagnostics.Metric.STATE_CLASSIFICATION,
+                        WorkflowDiagnostics.Metric.STATE_CLASSIFICATION,
                 result.timings().stateClassificationMillis(),
                 threadName,
                 mainThread);
@@ -1149,8 +1149,8 @@ public final class PetalAccessibilityService extends AccessibilityService {
         latestActionableOcrRequestSequence = 0L;
         running = true;
         automationMode = AutomationMode.PLANTING;
-        usageSession = UsageTelemetryClient.start(
-                this, UsageTelemetryClient.Operation.PLANTING, 1, currentRemoteConfigVersion());
+                usageSession = UsageTelemetryClient.start(
+                        this, UsageTelemetryClient.Operation.PLANTING, 1, currentRemoteConfigVersion());
         busy = false;
         switchGuard.reset();
         resetPlantingSearch();
@@ -1252,8 +1252,8 @@ public final class PetalAccessibilityService extends AccessibilityService {
         running = true;
         busy = false;
         automationMode = AutomationMode.FEED;
-        usageSession = UsageTelemetryClient.start(
-                this, UsageTelemetryClient.Operation.FEED, input.feedsPerSquad(),
+                usageSession = UsageTelemetryClient.start(
+                        this, UsageTelemetryClient.Operation.FEED, input.feedsPerSquad(),
                 currentRemoteConfigVersion());
         feedSettings = input;
         feedStep = FeedStep.WAITING_GAME_READY;
@@ -1325,8 +1325,8 @@ public final class PetalAccessibilityService extends AccessibilityService {
         running = true;
         busy = false;
         automationMode = AutomationMode.POSTCARD;
-        usageSession = UsageTelemetryClient.start(
-                this, UsageTelemetryClient.Operation.POSTCARD, collectionLimit,
+                usageSession = UsageTelemetryClient.start(
+                        this, UsageTelemetryClient.Operation.POSTCARD, collectionLimit,
                 currentRemoteConfigVersion());
         postcardAutomation.start(collectionLimit, petalPotName, pikminCount);
         postcardReturnGuard.reset();
@@ -1373,8 +1373,8 @@ public final class PetalAccessibilityService extends AccessibilityService {
         busy = false;
         automationMode = AutomationMode.DISPATCH;
         dispatchSettingsRevision = settings.expeditionSettingsRevision();
-        usageSession = UsageTelemetryClient.start(
-                this, UsageTelemetryClient.Operation.DISPATCH, 0, currentRemoteConfigVersion());
+                usageSession = UsageTelemetryClient.start(
+                        this, UsageTelemetryClient.Operation.DISPATCH, 0, currentRemoteConfigVersion());
         expeditionTargetMode = targetMode == null
                 ? ExpeditionTargetMode.FRUIT_AND_POT : targetMode;
         dispatchSelectionMethod = selectionMethod == null
@@ -1436,8 +1436,8 @@ public final class PetalAccessibilityService extends AccessibilityService {
         running = true;
         busy = false;
         automationMode = AutomationMode.RETURN_REWARD;
-        usageSession = UsageTelemetryClient.start(
-                this, UsageTelemetryClient.Operation.RETURN_REWARD, 1,
+                usageSession = UsageTelemetryClient.start(
+                        this, UsageTelemetryClient.Operation.RETURN_REWARD, 1,
                 currentRemoteConfigVersion());
         returnRewardScanGuard.reset();
         returnRewardSceneStability.reset();
@@ -1676,9 +1676,9 @@ public final class PetalAccessibilityService extends AccessibilityService {
 
     /** Enqueues one immutable capture transaction with request-time identity. */
     private void takeGameScreenshot(long generation) {
-        List<ScreenshotOverlayMask.Region> overlayRegions = List.of();
+        List<Rect> overlayRegions = List.of();
         AccessibilityNodeInfo root = getRootInActiveWindow();
-        workflowDiagnostics.recordCount(WorkflowDiagnostics.Counter.SCREENSHOT_REQUESTS);
+                workflowDiagnostics.recordCount(WorkflowDiagnostics.Counter.SCREENSHOT_REQUESTS);
         Rect gameBounds = null;
         int gameWindowId = -1;
         if (root != null && GAME_PACKAGE.contentEquals(root.getPackageName())) {
@@ -1773,7 +1773,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
                                         return;
                                     } finally {
                                         workflowDiagnostics.recordDuration(
-                                                WorkflowDiagnostics.Metric.BITMAP_COPY,
+                                                        WorkflowDiagnostics.Metric.BITMAP_COPY,
                                                 android.os.SystemClock.uptimeMillis()
                                                         - bitmapCopyStartedAtUptimeMillis);
                                     }
@@ -1795,7 +1795,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
                                     }
                                 } finally {
                                     workflowDiagnostics.recordDuration(
-                                            WorkflowDiagnostics.Metric.SCREENSHOT_CALLBACK,
+                                                    WorkflowDiagnostics.Metric.SCREENSHOT_CALLBACK,
                                             android.os.SystemClock.uptimeMillis()
                                                     - callbackStartedAtUptimeMillis);
                                 }
@@ -1813,7 +1813,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
                                             errorCode);
                                 } finally {
                                     workflowDiagnostics.recordDuration(
-                                            WorkflowDiagnostics.Metric.SCREENSHOT_CALLBACK,
+                                                    WorkflowDiagnostics.Metric.SCREENSHOT_CALLBACK,
                                             android.os.SystemClock.uptimeMillis()
                                                     - callbackStartedAtUptimeMillis);
                                 }
@@ -1920,7 +1920,6 @@ public final class PetalAccessibilityService extends AccessibilityService {
             CaptureGeometry captureGeometry,
             Bitmap bitmap) {
         long generation = request.generation();
-        maskOverlayRegions(bitmap, request.overlayRegions());
         PendingCaptureOnlyAction pending = pendingCaptureOnlyAction;
         if (pending != null) {
             pendingCaptureOnlyAction = null;
@@ -1933,14 +1932,14 @@ public final class PetalAccessibilityService extends AccessibilityService {
                 ActionAdmission.FrameContext context = actionContextForCapture(
                         generation, captureGeometry, request.admissionEpoch());
                 ActionAdmission.Decision decision = evaluateActionAdmission(context);
-                AdmissionDiagnostics.Event diagnostic = admissionDiagnostics.recordCaptureOnly(
+                        AdmissionDiagnostics.Event diagnostic = admissionDiagnostics.recordCaptureOnly(
                         pending.profile(),
                         context,
                         android.os.SystemClock.uptimeMillis(),
                         decision);
                 workflowDiagnostics.recordAdmission(decision);
                 workflowDiagnostics.recordSinceCapture(
-                        WorkflowDiagnostics.Metric.CAPTURE_TO_ADMISSION,
+                                WorkflowDiagnostics.Metric.CAPTURE_TO_ADMISSION,
                         context,
                         android.os.SystemClock.uptimeMillis());
                 logAdmissionDiagnosticIfNeeded(diagnostic, decision);
@@ -2168,7 +2167,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
             long ocrCompletedAtUptimeMillis,
             long admissionAtUptimeMillis,
             ActionAdmission.Decision decision) {
-        AdmissionDiagnostics.Event diagnostic = admissionDiagnostics.recordOcr(
+                AdmissionDiagnostics.Event diagnostic = admissionDiagnostics.recordOcr(
                 frame.profile().name(),
                 context,
                 ocrCompletedAtUptimeMillis,
@@ -2176,11 +2175,11 @@ public final class PetalAccessibilityService extends AccessibilityService {
                 decision);
         workflowDiagnostics.recordAdmission(decision);
         workflowDiagnostics.recordSinceCapture(
-                WorkflowDiagnostics.Metric.CAPTURE_TO_OCR,
+                        WorkflowDiagnostics.Metric.CAPTURE_TO_OCR,
                 context,
                 ocrCompletedAtUptimeMillis);
         workflowDiagnostics.recordSinceCapture(
-                WorkflowDiagnostics.Metric.CAPTURE_TO_ADMISSION,
+                        WorkflowDiagnostics.Metric.CAPTURE_TO_ADMISSION,
                 context,
                 admissionAtUptimeMillis);
         if (frame != null) {
@@ -2192,21 +2191,21 @@ public final class PetalAccessibilityService extends AccessibilityService {
     private void recordActionAdmissionDiagnostic(
             ActionAdmission.FrameContext context,
             ActionAdmission.Decision decision) {
-        AdmissionDiagnostics.Event diagnostic = admissionDiagnostics.recordActionCheck(
+                AdmissionDiagnostics.Event diagnostic = admissionDiagnostics.recordActionCheck(
                 ocrDiagnosticStage(),
                 context,
                 android.os.SystemClock.uptimeMillis(),
                 decision);
         workflowDiagnostics.recordAdmission(decision);
         workflowDiagnostics.recordSinceCapture(
-                WorkflowDiagnostics.Metric.CAPTURE_TO_ADMISSION,
+                        WorkflowDiagnostics.Metric.CAPTURE_TO_ADMISSION,
                 context,
                 android.os.SystemClock.uptimeMillis());
         logAdmissionDiagnosticIfNeeded(diagnostic, decision);
     }
 
     private void logAdmissionDiagnosticIfNeeded(
-            AdmissionDiagnostics.Event diagnostic,
+                    AdmissionDiagnostics.Event diagnostic,
             ActionAdmission.Decision decision) {
         if (diagnostic == null || !diagnostic.shouldLog()) {
             return;
@@ -2416,7 +2415,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
             return currentGameWindowFromInteractiveWindows();
         } finally {
             workflowDiagnostics.recordDuration(
-                    WorkflowDiagnostics.Metric.ACCESSIBILITY_TRAVERSAL,
+                            WorkflowDiagnostics.Metric.ACCESSIBILITY_TRAVERSAL,
                     android.os.SystemClock.uptimeMillis() - traversalStartedAtUptimeMillis);
         }
     }
@@ -2486,44 +2485,6 @@ public final class PetalAccessibilityService extends AccessibilityService {
         }
         setStatus(getString(R.string.status_waiting_game));
         schedule(1500L);
-    }
-
-    /** Captures physical screen bounds before the asynchronous screenshot starts. */
-    private List<ScreenshotOverlayMask.Region> captureVisibleOverlayRegions() {
-        List<ScreenshotOverlayMask.Region> regions = new ArrayList<>();
-        if (overlayHost != null) {
-            overlayHost.addVisibleRegions(regions);
-        }
-        return List.copyOf(regions);
-    }
-
-    /** Sanitizes only the OCR bitmap; the actual accessibility overlays remain untouched. */
-    private static void maskOverlayRegions(
-            Bitmap bitmap, List<ScreenshotOverlayMask.Region> overlayRegions) {
-        if (overlayRegions == null || overlayRegions.isEmpty()) {
-            return;
-        }
-        int width = bitmap.getWidth();
-        int height = bitmap.getHeight();
-        int[] rowBuffer = new int[width];
-        ScreenshotOverlayMask.erase(
-                width,
-                height,
-                new ScreenshotOverlayMask.PixelBuffer() {
-                    @Override
-                    public int get(int x, int y) {
-                        return bitmap.getPixel(x, y);
-                    }
-
-                    @Override
-                    public void fillRow(int y, int left, int right, int color) {
-                        int length = right - left;
-                        Arrays.fill(rowBuffer, 0, length, color);
-                        bitmap.setPixels(rowBuffer, 0, length, left, y, length, 1);
-                    }
-                },
-                overlayRegions,
-                Math.max(4, Math.round(width * 0.01f)));
     }
 
     /** 將硬體 buffer 複製成可供 OCR 讀取的 ARGB bitmap。 */
@@ -2614,7 +2575,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
             handlePlantingTokensOnMain(frame, bitmap, analysis);
         } finally {
             workflowDiagnostics.recordDuration(
-                    WorkflowDiagnostics.Metric.WORKFLOW_STATE_MUTATION,
+                            WorkflowDiagnostics.Metric.WORKFLOW_STATE_MUTATION,
                     android.os.SystemClock.uptimeMillis() - stateStartedAtUptimeMillis);
         }
     }
@@ -2995,6 +2956,14 @@ public final class PetalAccessibilityService extends AccessibilityService {
                 FeedScreenAnalyzer.NectarSelection templateSelection = visibleCandidates.isEmpty()
                         ? null
                         : findVisibleTemplateNectarCandidate(frame, bitmap, visibleCandidates);
+                String canonicalTarget = PetalCatalog.canonicalName(feedTargetFlower);
+                boolean basicNectar = canonicalTarget != null
+                        && canonicalTarget.endsWith("花瓣");
+                FeedScreenAnalyzer.NectarSelection baseGeometrySelection =
+                        templateSelection == null
+                                && basicNectar
+                                && !visibleCandidates.isEmpty()
+                                ? visibleCandidates.get(0) : null;
                 boolean listConfirmed = listAnalysis.selection() != null || templateSelection != null;
                 FeedScreenAnalyzer.NectarSearchAnalysis nectarAnalysis;
                 if (listConfirmed) {
@@ -3024,17 +2993,22 @@ public final class PetalAccessibilityService extends AccessibilityService {
                         schedule(FEED_OCR_RETRY_MILLIS);
                         return;
                     }
-                    String canonicalTarget = PetalCatalog.canonicalName(feedTargetFlower);
-                    boolean basicNectar = canonicalTarget != null
-                            && canonicalTarget.endsWith("花瓣");
-                    nectarAnalysis = basicNectar
-                            ? new FeedScreenAnalyzer.NectarSearchAnalysis(
-                                    null, "basic-card-geometry-required", false, false)
-                            : FeedScreenAnalyzer.analyzeSearchedNectar(
-                                    tokens,
-                                    feedTargetFlower,
-                                    bitmap.getWidth(),
-                                    bitmap.getHeight());
+                    if (baseGeometrySelection != null) {
+                        nectarAnalysis = new FeedScreenAnalyzer.NectarSearchAnalysis(
+                                baseGeometrySelection,
+                                "base-card-geometry",
+                                true,
+                                true);
+                    } else {
+                        nectarAnalysis = basicNectar
+                                ? new FeedScreenAnalyzer.NectarSearchAnalysis(
+                                        null, "basic-card-geometry-required", false, false)
+                                : FeedScreenAnalyzer.analyzeSearchedNectar(
+                                        tokens,
+                                        feedTargetFlower,
+                                        bitmap.getWidth(),
+                                        bitmap.getHeight());
+                    }
                 }
                 FeedScreenAnalyzer.NectarSelection selection = nectarAnalysis.selection();
                 if (selection == null) {
@@ -3119,8 +3093,10 @@ public final class PetalAccessibilityService extends AccessibilityService {
                     }
                     return;
                 }
-                int requiredTargetFrames = NectarTemplateMatcher.requiredStableFrames(
-                        visualEvidence.status(), FEED_REQUIRED_NECTAR_TARGET_FRAMES);
+                int requiredTargetFrames = "base-card-geometry".equals(nectarAnalysis.reason())
+                        ? FEED_REQUIRED_NECTAR_TARGET_FRAMES + 1
+                        : NectarTemplateMatcher.requiredStableFrames(
+                                visualEvidence.status(), FEED_REQUIRED_NECTAR_TARGET_FRAMES);
                 String stabilityReason = FeedScreenAnalyzer.nectarSelectionStabilityReason(
                         feedNectarCandidate,
                         selection,
@@ -3325,14 +3301,14 @@ public final class PetalAccessibilityService extends AccessibilityService {
                 selection.tapY(),
                 matchContext);
         workflowDiagnostics.recordDuration(
-                WorkflowDiagnostics.Metric.TEMPLATE_DETECTOR,
+                        WorkflowDiagnostics.Metric.TEMPLATE_DETECTOR,
                 android.os.SystemClock.uptimeMillis() - templateStartedAtUptimeMillis);
         NectarTemplateMatcher.MatchStats matchStats = nectarTemplateMatcher.stats();
         workflowDiagnostics.recordCount(
-                WorkflowDiagnostics.Counter.NECTAR_FULL_MATCHES,
+                        WorkflowDiagnostics.Counter.NECTAR_FULL_MATCHES,
                 matchStats.fullMatchExecutions() - matchStatsBefore.fullMatchExecutions());
         workflowDiagnostics.recordCount(
-                WorkflowDiagnostics.Counter.NECTAR_CACHE_HITS,
+                        WorkflowDiagnostics.Counter.NECTAR_CACHE_HITS,
                 matchStats.cacheHits() - matchStatsBefore.cacheHits());
         Log.i(TAG, "FEED_NECTAR_TEMPLATE status=" + evidence.status()
                 + " expectedScore=" + evidence.expectedScore()
@@ -4894,6 +4870,9 @@ public final class PetalAccessibilityService extends AccessibilityService {
                                     + " scrollbar=" + detected.scrollbar());
                             if (priorEpoch != expeditionDispatchSession.viewportEpoch()) {
                                 dispatchInspectedVisual.clear(); expeditionRecognitionConsensus.reset();
+                                if (expeditionTemplateMatcher != null) {
+                                    expeditionTemplateMatcher.clearObservationCache();
+                                }
                             }
                             switch (decision) {
                                 case EXPAND -> revealDispatchExplorePanel(detected);
@@ -5285,10 +5264,24 @@ public final class PetalAccessibilityService extends AccessibilityService {
 
         if (!dispatchPikminSelected) {
             if (dispatchSelectionMethod == DispatchSelectionMethod.AUTO) {
-                String autoLayout = dispatchSearchOpened ? "search-expanded" : "default";
-                ExpeditionScreenAnalyzer.Point automatic =
+                ExpeditionScreenAnalyzer.Point ocrAutomatic =
                         ExpeditionScreenAnalyzer.findPikminAutoButton(
                                 tokens, bitmap.getWidth(), bitmap.getHeight());
+                final ExpeditionScreenAnalyzer.Point automatic;
+                final String autoAnchor;
+                if (ocrAutomatic != null) {
+                    automatic = ocrAutomatic;
+                    autoAnchor = "ocr";
+                } else if (dispatchPikminType == DispatchPikminType.MIXED) {
+                    automatic = ExpeditionScreenAnalyzer.findPikminAutoButtonFromCollapsedSearch(
+                            tokens, bitmap.getWidth(), bitmap.getHeight(), bitmap::getPixel);
+                    autoAnchor = automatic == null ? "missing" : "collapsed-search";
+                } else {
+                    automatic = null;
+                    autoAnchor = "missing";
+                }
+                String autoLayout = (dispatchSearchOpened ? "search-expanded" : "default")
+                        + ":" + autoAnchor;
                 ExpeditionScreenAnalyzer.Point visibleGo =
                         ExpeditionScreenAnalyzer.findPikminGoButton(
                                 tokens, bitmap.getWidth(), bitmap.getHeight());
@@ -5339,7 +5332,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
                                 dispatchAutoTapAttempts, selectedCount, false,
                                 autoLayout, bitmap, automatic);
                     }
-                    stopWithError(getString(R.string.status_reward_selection_missing));
+                    stopWithError(getString(R.string.status_reward_auto_selection_failed));
                     return;
                 }
                 if (automatic == null) {
@@ -5666,7 +5659,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
             return new ExpeditionScreenAnalyzer.Point(mapped.x(), mapped.y());
         } finally {
             workflowDiagnostics.recordDuration(
-                    WorkflowDiagnostics.Metric.COORDINATE_CONVERSION,
+                            WorkflowDiagnostics.Metric.COORDINATE_CONVERSION,
                     android.os.SystemClock.uptimeMillis() - startedAtUptimeMillis);
         }
     }
@@ -5772,7 +5765,6 @@ public final class PetalAccessibilityService extends AccessibilityService {
             stopWithError(getString(R.string.status_reward_keyboard_failed));
             return;
         }
-        dispatchSearchKeyboardGuard.reset();
         if (!clearedMixedSearch && !gameEditableTextMatches(label)) {
             dispatchSearchOpened = false;
             dispatchSearchTextConfirmed = false;
@@ -5780,15 +5772,23 @@ public final class PetalAccessibilityService extends AccessibilityService {
             waitForDispatchFrame(getString(R.string.status_reward_selecting_pikmin));
             return;
         }
-        List<ExpeditionSelectionGeometry.Item> refreshedItems = ExpeditionSelectionGeometry.detect(
-                tokens, bitmap.getWidth(), bitmap.getHeight(), bitmap::getPixel);
-        if (refreshedItems.isEmpty()) {
-            if (++dispatchSearchResultMissingFrames >= MAX_ACTION_ATTEMPTS) {
-                stopWithError(getString(R.string.status_reward_selection_missing));
-            } else {
-                waitForDispatchFrame(getString(R.string.status_reward_selecting_pikmin));
+        if (dispatchSelectionMethod.requiresFullSelection()) {
+            List<ExpeditionSelectionGeometry.Item> refreshedItems =
+                    ExpeditionSelectionGeometry.detect(
+                            tokens, bitmap.getWidth(), bitmap.getHeight(), bitmap::getPixel);
+            Log.i(TAG, "EXPEDITION_FILTER_RESULT method=" + dispatchSelectionMethod
+                    + " items=" + refreshedItems.size());
+            if (refreshedItems.isEmpty()) {
+                if (++dispatchSearchResultMissingFrames >= MAX_ACTION_ATTEMPTS) {
+                    stopWithError(getString(R.string.status_reward_selection_grid_missing));
+                } else {
+                    waitForDispatchFrame(getString(R.string.status_reward_selecting_pikmin));
+                }
+                return;
             }
-            return;
+        } else {
+            Log.i(TAG, "EXPEDITION_FILTER_RESULT method=" + dispatchSelectionMethod
+                    + " evidence=SEARCH_CONFIRMED");
         }
         dispatchSearchResultMissingFrames = 0;
         dispatchColorSelected = true;
@@ -5839,7 +5839,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
                         .collect(java.util.stream.Collectors.joining(","))
                 + " selected=" + selected + " capacity=" + capacity);
         if (groups.isEmpty()) {
-            stopWithError(getString(R.string.status_reward_selection_missing));
+            stopWithError(getString(R.string.status_reward_selection_grid_missing));
             return;
         }
         StringBuilder key = new StringBuilder("DRAG12");
@@ -5943,10 +5943,8 @@ public final class PetalAccessibilityService extends AccessibilityService {
         dispatchPath(path, 720L, () -> {
             boolean atBottom = surface.scrollbar() != null && surface.scrollbar().atBottom();
             expeditionDispatchSession.recordListScroll(signature, atBottom);
-            if (expeditionTemplateMatcher != null) expeditionTemplateMatcher.clearObservationCache();
             Log.i(TAG, "EXPEDITION_SCROLL direction=" + (towardTop ? "TOP" : "DOWN")
                     + " signature=" + signature + " scrollbar=" + surface.scrollbar());
-            dispatchInspectedVisual.clear(); expeditionRecognitionConsensus.reset();
             busy = false; schedule(DISPATCH_AFTER_SCROLL_DELAY_MILLIS);
         }, () -> {
             busy = false; stopWithError(getString(R.string.status_reward_gesture_failed));
@@ -7424,17 +7422,20 @@ public final class PetalAccessibilityService extends AccessibilityService {
 
         boolean stableRewardScene = returnRewardSceneStability.observe(
                 width, height, bitmap::getPixel, rewardRegion);
-        ReturnRewardDetector.Target detectedRewardTarget = ReturnRewardDetector.find(
+        ReturnRewardDetector.Observation rewardObservation = ReturnRewardDetector.observe(
                 width, height, bitmap::getPixel, rewardRegion);
+        ReturnRewardDetector.Target detectedRewardTarget = rewardObservation.target();
         boolean pikminDetailOpen = FeedScreenAnalyzer.isPikminDetailOpen(tokens);
         ReturnRewardDetector.SquadCloseup squadCloseup =
                 ReturnRewardDetector.classifySquadCloseup(
                         width, height, bitmap::getPixel);
-        boolean useSquadCloseupEvidence =
-                ReturnRewardDetector.canUseSquadCloseupEvidence(detectedRewardTarget);
-        boolean squadCloseupConfirmed = useSquadCloseupEvidence && (pikminDetailOpen
+        boolean ambiguousSquadTarget = ReturnRewardDetector.isAmbiguousSquadTarget(
+                detectedRewardTarget, squadCloseup);
+        boolean useAbsenceEvidence =
+                ReturnRewardDetector.canUseAbsenceEvidence(rewardObservation);
+        boolean squadCloseupConfirmed = useAbsenceEvidence && (pikminDetailOpen
                 || squadCloseup == ReturnRewardDetector.SquadCloseup.SQUAD_CLOSEUP);
-        boolean squadCloseupUnknown = useSquadCloseupEvidence && !pikminDetailOpen
+        boolean squadCloseupUnknown = useAbsenceEvidence && !pikminDetailOpen
                 && squadCloseup == ReturnRewardDetector.SquadCloseup.UNKNOWN;
         ReturnRewardDetector.Target rewardTarget = detectedRewardTarget;
 
@@ -7478,7 +7479,9 @@ public final class PetalAccessibilityService extends AccessibilityService {
                 && sinceTap >= RETURN_REWARD_PERSISTENT_TARGET_REARM_MILLIS;
         PostcardMatcher.Page guardPage = squadCloseupUnknown
                 ? PostcardMatcher.Page.UNKNOWN : postcardPage;
-        boolean stableReturnScene = stableRewardScene && !squadCloseupUnknown;
+        boolean stableReturnScene = stableRewardScene
+                && !squadCloseupUnknown
+                && useAbsenceEvidence;
         ReturnRewardScanGuard.Decision decision = returnRewardScanGuard.observe(
                 guardPage,
                 rewardTarget,
@@ -7486,9 +7489,18 @@ public final class PetalAccessibilityService extends AccessibilityService {
                 height,
                 persistentTargetRearmEligible,
                 squadCloseupConfirmed,
-                stableReturnScene);
+                stableReturnScene,
+                ambiguousSquadTarget);
         if (decision == ReturnRewardScanGuard.Decision.TARGET_CONFIRMED) {
             handleReturnRewardTarget(rewardTarget, width, height);
+            return;
+        }
+        if (decision == ReturnRewardScanGuard.Decision.TARGET_RETRY_EXHAUSTED) {
+            stopWithError(getString(R.string.status_return_reward_unconfirmed));
+            return;
+        }
+        if (decision == ReturnRewardScanGuard.Decision.TARGET_AMBIGUOUS) {
+            stopWithError(getString(R.string.status_return_reward_target_ambiguous));
             return;
         }
         if (decision == ReturnRewardScanGuard.Decision.SQUAD_COMPLETE) {
@@ -7505,7 +7517,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
             schedule(RETURN_REWARD_SCAN_DELAY_MILLIS);
         } finally {
             workflowDiagnostics.recordDuration(
-                    WorkflowDiagnostics.Metric.MAP_DETECTOR,
+                            WorkflowDiagnostics.Metric.MAP_DETECTOR,
                     android.os.SystemClock.uptimeMillis() - detectorStartedAtUptimeMillis);
         }
     }
@@ -7681,9 +7693,9 @@ public final class PetalAccessibilityService extends AccessibilityService {
         FlowerDetailActionDetector.Target flowerDetailAction = flowerNavigationStep
                 ? FlowerDetailActionDetector.find(width, height, bitmap::getPixel)
                 : null;
-        MapPostcardBubbleDetector.Target previousFlowerBubble =
+                MapPostcardBubbleDetector.Target previousFlowerBubble =
                 PostcardBubbleDetectionPolicy.shouldDetect(page, step, receiveTapped)
-                        ? MapPostcardBubbleDetector.find(width, height, bitmap::getPixel)
+                                ? MapPostcardBubbleDetector.find(width, height, bitmap::getPixel)
                         : null;
         if (page == PostcardMatcher.Page.UNKNOWN
                 && previousFlowerBubble != null
@@ -7812,7 +7824,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
         if (page != PostcardMatcher.Page.UNKNOWN && page != PostcardMatcher.Page.MAP) {
             return null;
         }
-        MapSceneDetector.Detection detection = MapSceneDetector.detect(
+                MapSceneDetector.Detection detection = MapSceneDetector.detect(
                 bitmap.getWidth(), bitmap.getHeight(), bitmap::getPixel);
         if (detection.flowers().size() < 2 && detection.mushrooms().size() < 16) {
             return null;
@@ -7885,7 +7897,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
     }
 
     /** 點擊前次領取明信片後留在地圖上的黑色資訊框；完全不讀取框內文字。 */
-    private void openPreviousPostcardBubble(MapPostcardBubbleDetector.Target bubble) {
+            private void openPreviousPostcardBubble(MapPostcardBubbleDetector.Target bubble) {
         if (bubble == null) {
             setPostcardStatus(getString(R.string.status_postcard_waiting_previous_bubble));
             schedule(POSTCARD_VERIFY_DELAY_MILLIS);
@@ -8795,9 +8807,9 @@ public final class PetalAccessibilityService extends AccessibilityService {
         }
         boolean sent = result.dispatched();
         if (sent) {
-            workflowDiagnostics.recordCount(WorkflowDiagnostics.Counter.ACTIONS_DISPATCHED);
+                    workflowDiagnostics.recordCount(WorkflowDiagnostics.Counter.ACTIONS_DISPATCHED);
             workflowDiagnostics.recordSinceCapture(
-                    WorkflowDiagnostics.Metric.CAPTURE_TO_GESTURE,
+                            WorkflowDiagnostics.Metric.CAPTURE_TO_GESTURE,
                     actionContext,
                     android.os.SystemClock.uptimeMillis());
         }
@@ -8839,7 +8851,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
                 .addStroke(new GestureDescription.StrokeDescription(path, 0, durationMillis))
                 .build();
         workflowDiagnostics.recordDuration(
-                WorkflowDiagnostics.Metric.GESTURE_PREPARATION,
+                        WorkflowDiagnostics.Metric.GESTURE_PREPARATION,
                 android.os.SystemClock.uptimeMillis() - gesturePreparationStartedAtUptimeMillis);
         GestureDispatchResult dispatchResult = dispatchGestureSafely(
                 ActionGateway.Kind.TAP,
@@ -9072,7 +9084,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
                     }
                 }).withRegion(region));
         if (started != null) {
-            workflowDiagnostics.recordCount(WorkflowDiagnostics.Counter.OCR_TRANSACTIONS);
+                    workflowDiagnostics.recordCount(WorkflowDiagnostics.Counter.OCR_TRANSACTIONS);
         }
         busy = ocrRuntime.hasActiveTransaction();
     }
@@ -9116,7 +9128,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
             success.accept(completed, frame);
         } finally {
             workflowDiagnostics.recordDuration(
-                    WorkflowDiagnostics.Metric.OCR_CALLBACK,
+                            WorkflowDiagnostics.Metric.OCR_CALLBACK,
                     android.os.SystemClock.uptimeMillis() - callbackStartedAtUptimeMillis);
         }
     }
@@ -9145,7 +9157,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
             failure.accept(runtimeFailure.error());
         } finally {
             workflowDiagnostics.recordDuration(
-                    WorkflowDiagnostics.Metric.OCR_CALLBACK,
+                            WorkflowDiagnostics.Metric.OCR_CALLBACK,
                     android.os.SystemClock.uptimeMillis() - callbackStartedAtUptimeMillis);
         }
     }
@@ -9298,7 +9310,7 @@ public final class PetalAccessibilityService extends AccessibilityService {
         if (usageSession == null) {
             return;
         }
-        UsageTelemetryClient.Session completed = usageSession;
+                UsageTelemetryClient.Session completed = usageSession;
         usageSession = null;
         completed.finish(outcome);
     }
@@ -9372,9 +9384,9 @@ public final class PetalAccessibilityService extends AccessibilityService {
         if (admissionDiagnostics.snapshot().admissionCheckCount() > 0L) {
             Log.i(TAG, "ACTION_ADMISSION_SUMMARY " + admissionDiagnostics.summary());
         }
-        WorkflowDiagnostics.Snapshot workflowSnapshot = workflowDiagnostics.snapshot();
-        if (workflowSnapshot.count(WorkflowDiagnostics.Counter.SCREENSHOT_REQUESTS) > 0L
-                || workflowSnapshot.count(WorkflowDiagnostics.Counter.OCR_TRANSACTIONS) > 0L) {
+                WorkflowDiagnostics.Snapshot workflowSnapshot = workflowDiagnostics.snapshot();
+                if (workflowSnapshot.count(WorkflowDiagnostics.Counter.SCREENSHOT_REQUESTS) > 0L
+                        || workflowSnapshot.count(WorkflowDiagnostics.Counter.OCR_TRANSACTIONS) > 0L) {
             Log.i(TAG, "WORKFLOW_DIAGNOSTICS_SUMMARY " + workflowDiagnostics.summary());
         }
         OcrRuntimeDiagnostics.Snapshot ocrRuntimeSnapshot = ocrRuntime.diagnostics().snapshot(
