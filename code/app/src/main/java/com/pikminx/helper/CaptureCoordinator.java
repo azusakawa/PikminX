@@ -2,13 +2,15 @@ package com.pikminx.helper;
 
 import java.util.List;
 import java.util.Objects;
+import android.graphics.Rect;
 
 /** Owns admission, dispatch and terminal ownership of screenshot transactions. */
 final class CaptureCoordinator<R, F> {
     enum Presentation { NONE, RETURN_REWARD }
     enum FailureKind { TRANSIENT, PERMANENT, TIMEOUT, CANCELLED, COPY, STALE }
 
-    record Request<R>(R value, List<ScreenshotOverlayMask.Region> overlayRegions, long generation,
+    // ScreenshotOverlayMask removed — overlayRegions now uses Rect for backward compat.
+    record Request<R>(R value, List<Rect> overlayRegions, long generation,
             CaptureGeometry.Mode mode, CaptureGeometry.Bounds expectedBounds,
             CaptureGeometry.Bounds targetBounds, int displayId, int windowId,
             long captureSequence, long admissionEpoch, Presentation presentation,

@@ -6,6 +6,8 @@ final class ReturnRewardScanGuard {
         WAIT,
         POSTCARD,
         TARGET_CONFIRMED,
+        TARGET_AMBIGUOUS,
+        TARGET_RETRY_EXHAUSTED,
         SQUAD_COMPLETE,
         COMPLETE
     }
@@ -24,6 +26,8 @@ final class ReturnRewardScanGuard {
     private int squadCloseupScreens;
     private long squadCloseupStartedMillis = -1L;
     private boolean awaitingTargetClear;
+    private boolean persistentTargetRetried;
+    private int ambiguousSquadTargetScreens;
 
     Decision observe(
             PostcardMatcher.Page page,
@@ -81,6 +85,28 @@ final class ReturnRewardScanGuard {
                 allowPersistentTarget,
                 squadCloseup,
                 stableReturnScene,
+                false,
+                System.nanoTime() / 1_000_000L);
+    }
+
+    Decision observe(
+            PostcardMatcher.Page page,
+            ReturnRewardDetector.Target target,
+            int screenWidth,
+            int screenHeight,
+            boolean allowPersistentTarget,
+            boolean squadCloseup,
+            boolean stableReturnScene,
+            boolean ambiguousSquadTarget) {
+        return observe(
+                page,
+                target,
+                screenWidth,
+                screenHeight,
+                allowPersistentTarget,
+                squadCloseup,
+                stableReturnScene,
+                ambiguousSquadTarget,
                 System.nanoTime() / 1_000_000L);
     }
 
@@ -93,10 +119,42 @@ final class ReturnRewardScanGuard {
             boolean squadCloseup,
             boolean stableReturnScene,
             long nowMillis) {
+        return observe(
+                page,
+                target,
+                screenWidth,
+                screenHeight,
+                allowPersistentTarget,
+                squadCloseup,
+                stableReturnScene,
+                false,
+                nowMillis);
+    }
+
+    Decision observe(
+            PostcardMatcher.Page page,
+            ReturnRewardDetector.Target target,
+            int screenWidth,
+            int screenHeight,
+            boolean allowPersistentTarget,
+            boolean squadCloseup,
+            boolean stableReturnScene,
+            boolean ambiguousSquadTarget,
+            long nowMillis) {
         if (page == PostcardMatcher.Page.POSTCARD_RECEIVED) {
             reset();
             return Decision.POSTCARD;
         }
+        if (ambiguousSquadTarget) {
+            pending = null;
+            targetScreens = 0;
+            targetClearScreens = 0;
+            resetEmptyEvidence();
+            resetSquadCloseupEvidence();
+            return ++ambiguousSquadTargetScreens >= REQUIRED_TARGET_SCREENS
+                    ? Decision.TARGET_AMBIGUOUS : Decision.WAIT;
+        }
+        ambiguousSquadTargetScreens = 0;
         if (squadCloseup) {
             pending = null;
             targetScreens = 0;
@@ -111,6 +169,7 @@ final class ReturnRewardScanGuard {
                 if (++targetClearScreens >= REQUIRED_CLEAR_SCREENS) {
                     targetClearScreens = 0;
                     awaitingTargetClear = false;
+                    persistentTargetRetried = false;
                 }
                 return Decision.WAIT;
             }
@@ -125,6 +184,10 @@ final class ReturnRewardScanGuard {
         }
         resetSquadCloseupEvidence();
         if (target == null) {
+            if (!stableReturnScene) {
+                resetEmptyEvidence();
+                return Decision.WAIT;
+            }
             pending = null;
             targetScreens = 0;
             if (awaitingTargetClear) {
@@ -132,13 +195,11 @@ final class ReturnRewardScanGuard {
                     targetClearScreens = 0;
                     resetEmptyEvidence();
                     awaitingTargetClear = false;
+                    persistentTargetRetried = false;
                 }
                 return Decision.WAIT;
             }
-            if (!stableReturnScene) {
-                resetEmptyEvidence();
-                return Decision.WAIT;
-            }
+            persistentTargetRetried = false;
             if (emptyScreens == 0) {
                 emptyStartedMillis = nowMillis;
             }
@@ -147,17 +208,15 @@ final class ReturnRewardScanGuard {
                     ? Decision.COMPLETE : Decision.WAIT;
         }
         resetEmptyEvidence();
-        if (!stableReturnScene) {
-            pending = null;
-            targetScreens = 0;
-            targetClearScreens = 0;
-            return Decision.WAIT;
-        }
         if (awaitingTargetClear) {
             targetClearScreens = 0;
             if (!allowPersistentTarget) {
                 return Decision.WAIT;
             }
+            if (persistentTargetRetried) {
+                return Decision.TARGET_RETRY_EXHAUSTED;
+            }
+            persistentTargetRetried = true;
             awaitingTargetClear = false;
             pending = null;
             targetScreens = 0;
@@ -195,5 +254,7 @@ final class ReturnRewardScanGuard {
         resetEmptyEvidence();
         resetSquadCloseupEvidence();
         awaitingTargetClear = false;
+        persistentTargetRetried = false;
+        ambiguousSquadTargetScreens = 0;
     }
 }

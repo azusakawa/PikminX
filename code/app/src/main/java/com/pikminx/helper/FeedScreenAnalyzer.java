@@ -355,8 +355,21 @@ final class FeedScreenAnalyzer {
         if (candidates.isEmpty()) {
             return List.of();
         }
-        int firstRowY = candidates.stream().mapToInt(NectarSelection::y).min().orElse(0);
-        candidates.removeIf(candidate -> candidate.y() > firstRowY + Math.round(height * 0.05f));
+        candidates.sort(java.util.Comparator.comparingInt(NectarSelection::y));
+        int rowTolerance = Math.round(height * 0.05f);
+        int firstRowY = candidates.get(0).y();
+        for (NectarSelection candidate : candidates) {
+            long rowSize = candidates.stream()
+                    .filter(peer -> Math.abs(peer.y() - candidate.y()) <= rowTolerance)
+                    .count();
+            if (rowSize >= 2) {
+                firstRowY = candidate.y();
+                break;
+            }
+        }
+        int selectedRowY = firstRowY;
+        candidates.removeIf(candidate ->
+                Math.abs(candidate.y() - selectedRowY) > rowTolerance);
         candidates.sort(java.util.Comparator.comparingInt(NectarSelection::x));
         return List.copyOf(candidates);
     }
@@ -413,13 +426,13 @@ final class FeedScreenAnalyzer {
         }
         PetalMatcher.Token nectarToken = nearestNumberInRegion(
                 tokens, width, height,
-                0.04f, 0.31f, 0.52f, 0.62f,
-                0.16f, 0.57f,
+                0.04f, 0.31f, 0.32f, 0.42f,
+                0.16f, 0.36f,
                 FeedScreenAnalyzer::cardNumber);
         PetalMatcher.Token petalToken = nearestNumberInRegion(
                 tokens, width, height,
-                0.04f, 0.31f, 0.63f, 0.72f,
-                0.16f, 0.67f,
+                0.04f, 0.31f, 0.22f, 0.32f,
+                0.16f, 0.27f,
                 FeedScreenAnalyzer::number);
         Integer nectarCount = nectarToken == null ? null : cardNumber(nectarToken.text());
         Integer petalCount = petalToken == null ? null : number(petalToken.text());
@@ -438,8 +451,8 @@ final class FeedScreenAnalyzer {
                         nectarCount,
                         petalCount,
                         Math.round(width * 0.16f),
-                        Math.round(height * 0.57f),
-                        Math.round(height * 0.62f)),
+                        Math.round(height * 0.36f),
+                        Math.round(height * 0.32f)),
                 "matched",
                 true,
                 true);

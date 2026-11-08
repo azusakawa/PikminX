@@ -474,10 +474,11 @@ final class OverlayHost extends ContextWrapper {
         }
     }
 
-    void addVisibleRegions(List<ScreenshotOverlayMask.Region> regions) {
-        addVisibleOverlayRegion(regions, overlay);
-        addVisibleOverlayRegion(regions, noticeOverlay);
-    }
+    // [removed ScreenshotOverlayMask.Region] Commented out — callers are already disabled.
+    // void addVisibleRegions(List<ScreenshotOverlayMask.Region> regions) {
+    //     addVisibleOverlayRegion(regions, overlay);
+    //     addVisibleOverlayRegion(regions, noticeOverlay);
+    // }
 
     private View buildSettingsOverlay() {
         List<EditText> numberInputs = new ArrayList<>();
@@ -2328,18 +2329,19 @@ final class OverlayHost extends ContextWrapper {
         }
     }
 
-    private static void addVisibleOverlayRegion(
-            List<ScreenshotOverlayMask.Region> regions, View view) {
-        if (regions == null || view == null
-                || view.getVisibility() != View.VISIBLE || !view.isAttachedToWindow()) {
-            return;
-        }
-        Rect bounds = new Rect();
-        if (view.getGlobalVisibleRect(bounds) && !bounds.isEmpty()) {
-            regions.add(new ScreenshotOverlayMask.Region(
-                    bounds.left, bounds.top, bounds.right, bounds.bottom));
-        }
-    }
+    // [removed ScreenshotOverlayMask.Region]
+    // private static void addVisibleOverlayRegion(
+    //         List<ScreenshotOverlayMask.Region> regions, View view) {
+    //     if (regions == null || view == null
+    //             || view.getVisibility() != View.VISIBLE || !view.isAttachedToWindow()) {
+    //         return;
+    //     }
+    //     Rect bounds = new Rect();
+    //     if (view.getGlobalVisibleRect(bounds) && !bounds.isEmpty()) {
+    //         regions.add(new ScreenshotOverlayMask.Region(
+    //                 bounds.left, bounds.top, bounds.right, bounds.bottom));
+    //     }
+    // }
 
     private int dp(int value) {
         return Math.round(value * getResources().getDisplayMetrics().density);

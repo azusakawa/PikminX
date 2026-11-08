@@ -79,8 +79,7 @@ final class ScreenshotRequestQueue<T> {
     }
 
     private static long boundedIncrement(long value) {
-        return value >= BoundedLatencyStats.MAX_COUNT
-                ? BoundedLatencyStats.MAX_COUNT : value + 1L;
+        return value >= 1_000_000 ? 1_000_000 : value + 1L;
     }
 
     record Snapshot(

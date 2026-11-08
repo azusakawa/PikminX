@@ -7,12 +7,14 @@
 
     <!-- 主畫面內容。 -->
     <string name="main_title">PikminX</string>
-    <string name="main_home_subtitle">裝置準備狀態</string>
+    <string name="main_home_subtitle">首頁</string>
     <string name="main_nav_home">⌂\n首頁</string>
     <string name="main_nav_automations">▦\n自動化</string>
     <string name="main_nav_settings">⚙\n設定</string>
     <string name="main_automations_title">自動化</string>
     <string name="main_settings_title">設定</string>
+    <string name="main_state_enabled">已啟用</string>
+    <string name="main_state_disabled">未啟用</string>
     <string name="main_device_ready_title">裝置準備完成</string>
     <string name="main_device_ready_description">必要權限與 PikminX 服務狀態集中顯示於裝置檢查。</string>
     <string name="main_device_action_title">裝置尚未準備完成</string>
@@ -26,6 +28,12 @@
     <string name="main_feature_postcard">明信片收集</string>
     <string name="main_feature_dispatch">自動派遣</string>
     <string name="main_feature_return">回程領取</string>
+    <string name="main_features_title">功能</string>
+    <string name="main_feature_planting_description">自動選擇花瓣、持續種花，並依條件切換花種。</string>
+    <string name="main_feature_feed_description">自動餵食精華並收集 Pikmin 產生的花瓣。</string>
+    <string name="main_feature_dispatch_description">自動處理探險清單中的水果與花盆派遣。</string>
+    <string name="main_feature_postcard_description">自動執行指定流程並完成明信片收集。</string>
+    <string name="main_feature_return_description">自動領取 Pikmin 帶回的水果、花盆與明信片。</string>
     <string name="main_feature_planting_summary">%1$d 種花 · %2$d 片切換</string>
     <string name="main_feature_feed_summary">每隊 %1$d 輪 · 最多換隊 %2$d 次</string>
     <string name="main_feature_postcard_summary">%1$d 次收集設定</string>
@@ -40,7 +48,24 @@
     <string name="main_automation_subtitle">所有功能使用同一套狀態語言</string>
     <string name="main_automation_features_title">功能</string>
     <string name="main_automation_state_note">狀態固定為：未設定 → 需要操作 → 可開始 → 執行中 → 已暫停／已完成／已停止／錯誤。</string>
-    <string name="main_settings_subtitle">權限、服務、支援</string>
+    <string name="main_settings_subtitle">設定</string>
+    <string name="main_home_service_description">PikminX 自動化功能可用</string>
+    <string name="main_home_overlay_description">遊戲內可開啟控制面板</string>
+    <string name="main_pikmin_bloom_section">Pikmin Bloom</string>
+    <string name="main_open_game_description">直接進入遊戲</string>
+    <string name="main_open_action">開啟</string>
+    <string name="main_pikminx_section">PikminX</string>
+    <string name="main_version_title">版本</string>
+    <string name="main_current_version">目前版本 %1$s</string>
+    <string name="main_check_update">檢查更新</string>
+    <string name="main_checking_update">檢查中</string>
+    <string name="main_overlay_setting_title">懸浮按鈕</string>
+    <string name="main_overlay_setting_description">顯示遊戲內 PikminX 控制入口</string>
+    <string name="main_accessibility_setting_description">PikminX 執行自動化所需權限</string>
+    <string name="main_support_section">支持</string>
+    <string name="main_sponsor_title">贊助 PikminX</string>
+    <string name="main_sponsor_description">支持持續開發與維護</string>
+    <string name="main_support_action">支持</string>
     <string name="main_quick_start_title">前往 Pikmin Bloom</string>
     <string name="main_quick_start_description">開啟遊戲後，既有自動化從 PikminX 懸浮控制操作；蘑菇功能身份保留但目前凍結。</string>
     <string name="main_device_status_title">裝置狀態</string>
@@ -226,7 +251,9 @@
     <string name="status_reward_left_game">Pikmin Bloom 已離開前景，自動派遣已停止</string>
     <string name="status_reward_gesture_failed">派遣手勢失敗，已停止</string>
     <string name="status_reward_wrong_page">請先進入「探險」並完整展開清單</string>
-    <string name="status_reward_selection_missing">找不到皮克敏選擇控制，已停止</string>
+    <string name="status_reward_selection_missing">找不到「自動」選擇控制，已停止</string>
+    <string name="status_reward_selection_grid_missing">找不到目前的皮克敏清單，已停止</string>
+    <string name="status_reward_auto_selection_failed">點擊「自動」後仍未選取皮克敏，已停止</string>
     <string name="status_reward_search_missing">找不到皮克敏搜尋按鈕，正在重新辨識</string>
     <string name="status_reward_search_input_failed">無法輸入皮克敏類型，已停止</string>
     <string name="status_reward_keyboard_failed">系統鍵盤持續未關閉，已停止</string>
@@ -243,6 +270,8 @@
     <string name="status_return_reward_timeout">回程收取已達安全上限</string>
     <string name="status_return_reward_left_game">Pikmin Bloom 已離開前景，回程收取已停止</string>
     <string name="status_return_reward_gesture_failed">回程物品點擊失敗，已停止</string>
+    <string name="status_return_reward_unconfirmed">回程物品重試後仍未消失，已停止</string>
+    <string name="status_return_reward_target_ambiguous">隊伍特寫中未確認水果或花盆，已停止</string>
     <string name="status_return_reward_nectar_warning_stopped">偵測到精華容量警告，依設定停止；目前畫面未變更</string>
     <string name="status_return_reward_nectar_warning_continuing">偵測到精華容量警告，依設定繼續領取</string>
 

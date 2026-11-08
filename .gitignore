@@ -1,15 +1,74 @@
-/.gradle/
-/.idea/
-/temp/
-/apk/
-/device-evidence/
-/validation/
+# Local environment and credentials
 /signing/
-/fresh-device.png
-/code/.gradle/
-/code/build/
-/code/app/build/
 **/local.properties
-*.apk
 *.jks
 *.keystore
+.env
+.env.*
+
+# Build outputs and caches
+/.gradle/
+**/.gradle/
+**/build/
+/build-env/
+/platform-tools/
+/build-worktrees/
+/node_modules/
+node_modules-*/
+.wrangler/
+
+# Packages, logs, and temporary files
+*.apk
+*.aab
+*.apks
+*.aab.bz2
+*.apkm
+*.zip
+*.tar.gz
+*.7z
+*.dmg
+*.log
+*.tmp
+*.enc
+*.bak
+*.old
+*.swp
+**/build_log*.txt
+
+# IDE and OS files
+/.idea/
+/.vscode/
+*.iml
+*.class
+Thumbs.db
+
+/archives/
+/releases/
+/temp/
+/device-evidence/
+/validation/
+/fresh-device.png
+/*.apk
+/device-*.png
+/*-window.xml
+/planting-*.png
+/pikminx-main-for-start.png
+/settings-*.png
+
+# APK output directory (large build artifacts, ~58MB each)
+/apk/
+
+# Local machine notes, validation evidence, and machine-specific helper scripts
+/code/PikminX_AUTONOMOUS_WORKLOG.md
+/validation/expedition/
+/code/aapt2-wrapper.bat
+/code/aapt2-wrapper.sh
+/code/build-final.bat
+/code/build-native.bat
+/code/build-wsl.sh
+/code/create-stableids.bat
+/code/app/src/main/assets/cleanup.ps1
+
+# Real-device screenshots may contain account, location, or residential details.
+# Replace or sanitize these fixtures before committing them for instrumented tests.
+/code/app/src/androidTest/assets/mushroom_fixtures/
