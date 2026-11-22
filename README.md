@@ -29,4 +29,4 @@ Debug APK 會輸出至 `code/app/build/outputs/apk/debug/app-debug.apk`。Releas
 
 ## 授權
 
-本專案依 [PolyForm Noncommercial License](LICENSE) 與補充條款 [LICENSE.md](LICENSE.md) 授權，並非以 OSI 開源軟體呈現。
+本專案依 [MIT License](LICENSE) 授權。
